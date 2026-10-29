@@ -1,17 +1,21 @@
 ﻿#!/usr/bin/env python3
 r"""
-MGLENNP STANDALONE SWITCHBOARD — HTTP API & VOICE DISPATCH OPERATOR (v1)
+MGLENNP STANDALONE SWITCHBOARD — HTTP API, LEGITIMACY AUDITOR & PIXEL VOICE COCKPIT (v1.1)
 Endpoints:
- - GET  /v1/health     -> Switchboard status & live Supabase agent count
- - POST /v1/matchmake  -> 0.05ms 64-Bit MGLE-NNP matchmaking + $0.0001 ledger log
- - POST /v1/crawl      -> Refreshes public MCP/A2A registry into Supabase
- - POST /v1/operator   -> Plain-English Voice Command & Road Briefing Agent for Pixel
+ - GET  /               -> Switchboard status & live Supabase agent count
+ - GET  /v1/health      -> Switchboard status & live Supabase agent count
+ - GET  /cockpit        -> Hands-free mobile voice cockpit for Pixel in the truck cab
+ - GET  /v1/operator    -> Query via ?cmd=... for direct browser/assistant calls
+ - POST /v1/operator    -> Plain-English Voice Command & Control (status, list, audit, slash, restore, crawl, find)
+ - POST /v1/matchmake   -> 0.05ms 64-Bit MGLE-NNP matchmaking + $0.0001 ledger log
+ - POST /v1/crawl       -> Refreshes public MCP/A2A registry into Supabase
 """
 
 import os
 import sys
 import json
 import threading
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -48,25 +52,164 @@ def fetch_ledger_from_supabase():
     )
 
 
+def patch_agent_in_supabase(agent_id, fields):
+    encoded_id = urllib.parse.quote(agent_id, safe="")
+    return supabase_request(
+        f"radial_agent_phonebook?agent_id=eq.{encoded_id}",
+        method="PATCH",
+        payload=fields,
+        prefer="return=representation",
+    )
+
+
 def classify_agent_legitimacy(agent):
-    """Separates legit callable endpoints from unhosted GitHub repos and slashed nodes."""
-    code = agent.get("mglennp_code", "")
-    endpoint = (agent.get("endpoint") or "").lower()
-    if code.startswith("FF") or code[1:2] == "F":
+    """
+    3-Part MglennP Legitimacy Standard:
+    1. Slashed / Failed check (FF grade or zeroed weight)
+    2. Unhosted Code Repo check (GitHub/GitLab source link or Guarantee == 'D' for Dormant)
+    3. Live Callable Agent (Active endpoint + non-zero domain bitmask + valid MGLE-NNP contract)
+    """
+    code = (agent.get("mglennp_code") or "").upper()
+    endpoint = (agent.get("endpoint") or "").strip().lower()
+    weight = float(agent.get("synaptic_weight", 0.0))
+    bitmask = int(agent.get("radial_bitmask", 0))
+
+    if code.startswith("FF") or code[1:2] == "F" or weight <= 0.05:
         return "SLASHED_OR_FAILED"
-    if "github.com" in endpoint or endpoint.endswith(".git"):
+    if (
+        not endpoint
+        or "github.com" in endpoint
+        or "gitlab.com" in endpoint
+        or endpoint.endswith(".git")
+        or code[1:2] == "D"
+        or bitmask == 0
+    ):
         return "UNHOSTED_REPO_CODE_ONLY"
     return "LIVE_CALLABLE_AGENT"
+
+
+def mutate_mglennp_code(old_code, merit=None, guarantee=None):
+    clean = (old_code or "CAAB-ZES").replace("-", "")
+    if len(clean) != 7:
+        clean = "CAABZES"
+    chars = list(clean)
+    if merit:
+        chars[0] = merit
+    if guarantee:
+        chars[1] = guarantee
+    new_code = "".join(chars[:4]) + "-" + "".join(chars[4:])
+    u64 = pack_mglennp_u64(new_code, hop_ttl=0 if chars[4] in ("Z", "S") else 1, version=1)
+    return new_code, u64, f"0x{u64:016X}"
 
 
 def handle_voice_operator_command(command_text):
     """
     Embedded Switchboard Operator for hands-free Pixel voice control on the road.
-    Interprets natural spoken English, executes switchboard actions, and returns
-    a clear spoken briefing.
+    Supports: status, list, audit/probe, slash/block, restore/promote, crawl, and find/match.
     """
     cmd = command_text.strip().lower()
 
+    # 1. SLASH / BLOCK AN AGENT BY VOICE
+    if any(w in cmd for w in ("slash", "block", "ban", "disable")):
+        phonebook = fetch_phonebook_from_supabase()
+        target = None
+        for a in phonebook:
+            aid = a["agent_id"].lower()
+            aname = a["name"].lower()
+            if any(tok in aid or tok in aname for tok in cmd.split() if len(tok) > 3 and tok not in ("slash", "block", "agent", "disable", "the")):
+                target = a
+                break
+        if not target:
+            return {
+                "command_understood": "VOICE_SLASH_AGENT",
+                "voice_briefing": "Tell me which agent name or ID to slash, such as: slash relay or slash validator.",
+            }
+        new_code, u64, u64_hex = mutate_mglennp_code(target["mglennp_code"], merit="F", guarantee="F")
+        patch_agent_in_supabase(target["agent_id"], {
+            "mglennp_code": new_code,
+            "mglennp_u64": u64,
+            "mglennp_u64_hex": u64_hex,
+            "synaptic_weight": 0.0,
+        })
+        return {
+            "command_understood": "VOICE_SLASH_AGENT",
+            "slashed_agent_id": target["agent_id"],
+            "new_code": new_code,
+            "voice_briefing": f"Slashed {target['name']}. Code updated to {new_code} and weight set to zero in Virginia Supabase.",
+        }
+
+    # 2. RESTORE / PROMOTE AN AGENT BY VOICE
+    if any(w in cmd for w in ("restore", "unblock", "promote", "activate")):
+        phonebook = fetch_phonebook_from_supabase()
+        target = None
+        for a in phonebook:
+            aid = a["agent_id"].lower()
+            aname = a["name"].lower()
+            if any(tok in aid or tok in aname for tok in cmd.split() if len(tok) > 3 and tok not in ("restore", "unblock", "promote", "activate", "agent", "the")):
+                target = a
+                break
+        if not target:
+            return {
+                "command_understood": "VOICE_RESTORE_AGENT",
+                "voice_briefing": "Tell me which agent name or ID to restore.",
+            }
+        new_code, u64, u64_hex = mutate_mglennp_code(target["mglennp_code"], merit="B", guarantee="A")
+        patch_agent_in_supabase(target["agent_id"], {
+            "mglennp_code": new_code,
+            "mglennp_u64": u64,
+            "mglennp_u64_hex": u64_hex,
+            "synaptic_weight": 0.90,
+        })
+        return {
+            "command_understood": "VOICE_RESTORE_AGENT",
+            "restored_agent_id": target["agent_id"],
+            "new_code": new_code,
+            "voice_briefing": f"Restored {target['name']} to active status with code {new_code} in Virginia Supabase.",
+        }
+
+    # 3. AUDIT / PROBE LEGITIMACY (SEPARATE LEGIT AGENTS FROM WANNABE REPOS)
+    if any(w in cmd for w in ("audit", "probe", "legit", "verify")):
+        phonebook = fetch_phonebook_from_supabase()
+        demoted = 0
+        live_cnt = 0
+        slashed_cnt = 0
+        for a in phonebook:
+            status = classify_agent_legitimacy(a)
+            if status == "UNHOSTED_REPO_CODE_ONLY":
+                if a["mglennp_code"][1:2] != "D":
+                    new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="D")
+                    patch_agent_in_supabase(a["agent_id"], {
+                        "mglennp_code": new_code,
+                        "mglennp_u64": u64,
+                        "mglennp_u64_hex": u64_hex,
+                    })
+                    demoted += 1
+            elif status == "LIVE_CALLABLE_AGENT":
+                live_cnt += 1
+            else:
+                slashed_cnt += 1
+        repo_cnt = len(phonebook) - live_cnt - slashed_cnt
+        return {
+            "command_understood": "LEGITIMACY_DEEP_AUDIT",
+            "voice_briefing": (
+                f"Legitimacy audit finished. Verified {live_cnt} live callable agents, "
+                f"flagged {repo_cnt} unhosted code repos as Guarantee D for Dormant ({demoted} newly updated), "
+                f"and kept {slashed_cnt} slashed scammer blocked."
+            ),
+        }
+
+    # 4. LIST VERIFIED LIVE AGENTS
+    if any(w in cmd for w in ("list", "who is live", "top agents", "show live")):
+        phonebook = fetch_phonebook_from_supabase()
+        live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
+        names = ", ".join(f"{a['name']} ({a['mglennp_code']})" for a in live_only[:4])
+        return {
+            "command_understood": "LIST_LIVE_AGENTS",
+            "live_count": len(live_only),
+            "voice_briefing": f"You have {len(live_only)} legit live agents ready for dispatch. Top nodes are: {names}.",
+        }
+
+    # 5. CRAWL & SYNC REGISTRY
     if any(w in cmd for w in ("crawl", "refresh", "update registry", "scan")):
         phonebook = crawl_public_agent_phonebook()
         supabase_request(
@@ -85,6 +228,7 @@ def handle_voice_operator_command(command_text):
             ),
         }
 
+    # 6. MATCHMAKE / DISPATCH LIVE AGENT
     if any(w in cmd for w in ("find", "match", "hire", "need")):
         phonebook = fetch_phonebook_from_supabase()
         live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
@@ -105,7 +249,7 @@ def handle_voice_operator_command(command_text):
             "voice_briefing": "No live callable agents matched that request.",
         }
 
-    # Default: Road Roll-Call / Status Briefing
+    # 7. DEFAULT: ROAD ROLL-CALL / STATUS BRIEFING
     phonebook = fetch_phonebook_from_supabase()
     ledger = fetch_ledger_from_supabase()
     live_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT")
@@ -132,6 +276,82 @@ def handle_voice_operator_command(command_text):
     }
 
 
+COCKPIT_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>MglennP Switchboard — Road Voice Cockpit</title>
+<style>
+  body { background:#0b0f19; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:16px; text-align:center; }
+  h1 { font-size:1.3rem; color:#38bdf8; margin:4px 0; }
+  .sub { font-size:0.85rem; color:#94a3b8; margin-bottom:16px; }
+  #micBtn { width:100%; max-width:420px; height:150px; border-radius:24px; border:3px solid #38bdf8;
+            background:#0284c7; color:#fff; font-size:1.5rem; font-weight:700; cursor:pointer; margin-bottom:16px; }
+  #micBtn.listening { background:#dc2626; border-color:#f87171; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:420px; margin:0 auto 16px; }
+  .qbtn { padding:16px 8px; border-radius:14px; border:1px solid #334155; background:#1e293b; color:#e2e8f0;
+          font-size:1rem; font-weight:600; cursor:pointer; }
+  #replyBox { max-width:420px; margin:0 auto; padding:16px; border-radius:14px; background:#111827;
+              border:1px solid #1f2937; text-align:left; font-size:1.05rem; line-height:1.45; }
+</style>
+</head>
+<body>
+  <h1>MglennP Switchboard Cockpit</h1>
+  <div class="sub">US-East4 (Northern Virginia) • Hands-Free Pixel Control</div>
+  <button id="micBtn" onclick="startVoice()">🎙️ TAP & SPEAK COMMAND</button>
+  <div class="grid">
+    <button class="qbtn" onclick="sendCmd('status report')">📊 Roll Call</button>
+    <button class="qbtn" onclick="sendCmd('audit the phone book')">🛡️ Audit Legit</button>
+    <button class="qbtn" onclick="sendCmd('list live agents')">⚡ List Live</button>
+    <button class="qbtn" onclick="sendCmd('crawl registry')">🔄 Crawl Now</button>
+  </div>
+  <div id="replyBox">Tap the blue microphone button or any quick action above. Responses will be spoken out loud.</div>
+<script>
+async function sendCmd(text) {
+  const box = document.getElementById('replyBox');
+  box.innerText = ' Heard: "' + text + '" ... contacting Virginia switchboard...';
+  try {
+    const res = await fetch('/v1/operator', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({voice_command: text})
+    });
+    const data = await res.json();
+    const msg = data.voice_briefing || JSON.stringify(data);
+    box.innerText = msg;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(msg));
+    }
+  } catch (e) {
+    box.innerText = 'Error: ' + e;
+  }
+}
+function startVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    const typed = prompt('Voice recognition not supported in this browser tab. Type command:');
+    if (typed) sendCmd(typed);
+    return;
+  }
+  const btn = document.getElementById('micBtn');
+  const rec = new SR();
+  rec.lang = 'en-US';
+  rec.onstart = () => { btn.classList.add('listening'); btn.innerText = '🔴 LISTENING... SPEAK NOW'; };
+  rec.onend = () => { btn.classList.remove('listening'); btn.innerText = '🎙️ TAP & SPEAK COMMAND'; };
+  rec.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    sendCmd(transcript);
+  };
+  rec.start();
+}
+</script>
+</body>
+</html>
+"""
+
+
 class SwitchboardHandler(BaseHTTPRequestHandler):
     def _send_json(self, status_code, payload):
         body = json.dumps(payload, indent=2).encode("utf-8")
@@ -141,13 +361,32 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_html(self, status_code, html_text):
+        body = html_text.encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, fmt, *args):
         pass
 
     def do_GET(self):
-        if self.path in ("/", "/v1/health"):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in ("/", "/v1/health"):
             try:
                 report = handle_voice_operator_command("status report")
+                self._send_json(200, report)
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+        elif parsed.path == "/cockpit":
+            self._send_html(200, COCKPIT_HTML)
+        elif parsed.path == "/v1/operator":
+            try:
+                qs = urllib.parse.parse_qs(parsed.query)
+                cmd_text = qs.get("cmd", ["status report"])[0]
+                report = handle_voice_operator_command(cmd_text)
                 self._send_json(200, report)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
@@ -172,7 +411,8 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
             coupler = data.get("coupler", "****-Z**")
             try:
                 phonebook = fetch_phonebook_from_supabase()
-                result = radial_mglennp_matchmake(intent, phonebook, required_pattern=coupler)
+                live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
+                result = radial_mglennp_matchmake(intent, live_only, required_pattern=coupler)
                 if result["matches"]:
                     top = result["matches"][0]
                     supabase_request("handshake_ledger", method="POST", payload=[{
@@ -205,12 +445,13 @@ def run_self_test(port):
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     print("======================================================================")
-    print(" MGLENNP VOICE DISPATCH OPERATOR — PIXEL ROAD BRIEFING SELF-TEST")
+    print(" MGLENNP VOICE OPERATOR v1.1 — COMMAND, AUDIT & CONTROL SELF-TEST")
     print("======================================================================")
 
     voice_prompts = [
-        "Hey Switchboard, give me a road status roll call",
-        "Find me a legit live SQL and github validator agent",
+        "Audit the phone book for legit agents",
+        "List live agents",
+        "Find me a deep construction and load calculation agent",
     ]
     for prompt in voice_prompts:
         req_payload = json.dumps({"voice_command": prompt}).encode("utf-8")
@@ -220,7 +461,7 @@ def run_self_test(port):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             out = json.loads(resp.read().decode("utf-8"))
             print(f"\n • You Say on Pixel: \"{prompt}\"")
             print(f"   -> Operator Replies: \"{out['voice_briefing']}\"")
