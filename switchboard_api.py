@@ -1,22 +1,24 @@
 ﻿#!/usr/bin/env python3
 r"""
-MGLENNP STANDALONE SWITCHBOARD — HTTP API, LEGITIMACY AUDITOR & PIXEL VOICE COCKPIT (v1.1)
+MGLENNP STANDALONE SWITCHBOARD — GATED HTTP API, LEGITIMACY AUDITOR & PIXEL COCKPIT (v1.2)
 Endpoints:
- - GET  /               -> Switchboard status & live Supabase agent count
- - GET  /v1/health      -> Switchboard status & live Supabase agent count
- - GET  /cockpit        -> Hands-free mobile voice cockpit for Pixel in the truck cab
- - GET  /v1/operator    -> Query via ?cmd=... for direct browser/assistant calls
- - POST /v1/operator    -> Plain-English Voice Command & Control (status, list, audit, slash, restore, crawl, find)
+ - GET  /               -> Public read-only switchboard status & live Supabase agent count
+ - GET  /v1/health      -> Public read-only switchboard status & live Supabase agent count
+ - GET  /cockpit        -> Hands-free mobile voice cockpit for Pixel (stores Operator Key locally)
+ - GET  /v1/operator    -> [GATED: X-Operator-Key] Query via ?cmd=...
+ - POST /v1/operator    -> [GATED: X-Operator-Key] Voice Command & Control (status, list, audit, slash, restore, crawl, find)
  - POST /v1/matchmake   -> 0.05ms 64-Bit MGLE-NNP matchmaking + $0.0001 ledger log
- - POST /v1/crawl       -> Refreshes public MCP/A2A registry into Supabase
+ - POST /v1/crawl       -> [GATED: X-Operator-Key] Refreshes public MCP/A2A registry into Supabase
 """
 
 import os
 import sys
+import hmac
 import json
 import threading
 import urllib.parse
 import urllib.request
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from radial_synapse_phonebook import (
@@ -28,6 +30,39 @@ from radial_synapse_phonebook import (
     unpack_mglennp_u64,
     HANDSHAKE_FEE_USD,
 )
+
+
+def load_operator_key():
+    """Loads OPERATOR_KEY from environment or local .env file."""
+    key = os.environ.get("OPERATOR_KEY", "").strip()
+    if key:
+        return key
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("OPERATOR_KEY="):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    os.environ["OPERATOR_KEY"] = val
+                    return val
+    return ""
+
+
+def check_operator_gate(headers, query_params=None, body_data=None):
+    """Verifies X-Operator-Key header, body field, or query param in constant time."""
+    expected = load_operator_key()
+    if not expected:
+        return False, "Server OPERATOR_KEY is not configured."
+    provided = (
+        headers.get("X-Operator-Key")
+        or (body_data or {}).get("operator_key")
+        or ((query_params or {}).get("key", [""])[0])
+        or ""
+    ).strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        return False, "Unauthorized: Valid X-Operator-Key required."
+    return True, "Authorized"
 
 
 def fetch_phonebook_from_supabase():
@@ -102,9 +137,37 @@ def mutate_mglennp_code(old_code, merit=None, guarantee=None):
     return new_code, u64, f"0x{u64:016X}"
 
 
+def get_public_status_roll_call():
+    phonebook = fetch_phonebook_from_supabase()
+    ledger = fetch_ledger_from_supabase()
+    live_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT")
+    repo_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "UNHOSTED_REPO_CODE_ONLY")
+    slashed_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "SLASHED_OR_FAILED")
+    total_fees = round(len(ledger) * HANDSHAKE_FEE_USD, 4)
+
+    return {
+        "command_understood": "ROAD_STATUS_ROLL_CALL",
+        "security_gate": "OPERATOR_KEY_ENABLED",
+        "stats": {
+            "total_indexed": len(phonebook),
+            "legit_live_agents": live_cnt,
+            "unhosted_github_repos": repo_cnt,
+            "slashed_scammers": slashed_cnt,
+            "total_handshakes_logged": len(ledger),
+            "accrued_toll_usd": total_fees,
+        },
+        "voice_briefing": (
+            f"Switchboard is healthy and gated in Northern Virginia. Out of {len(phonebook)} indexed entries, "
+            f"{live_cnt} are verified live agents, {repo_cnt} are unhosted GitHub code repos, "
+            f"and {slashed_cnt} is blocked for subcontracting fraud. "
+            f"You have {len(ledger)} handshakes logged in the ledger totaling ${total_fees:.4f}."
+        ),
+    }
+
+
 def handle_voice_operator_command(command_text):
     """
-    Embedded Switchboard Operator for hands-free Pixel voice control on the road.
+    Gated Switchboard Operator for hands-free Pixel voice control on the road.
     Supports: status, list, audit/probe, slash/block, restore/promote, crawl, and find/match.
     """
     cmd = command_text.strip().lower()
@@ -250,30 +313,7 @@ def handle_voice_operator_command(command_text):
         }
 
     # 7. DEFAULT: ROAD ROLL-CALL / STATUS BRIEFING
-    phonebook = fetch_phonebook_from_supabase()
-    ledger = fetch_ledger_from_supabase()
-    live_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT")
-    repo_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "UNHOSTED_REPO_CODE_ONLY")
-    slashed_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "SLASHED_OR_FAILED")
-    total_fees = round(len(ledger) * HANDSHAKE_FEE_USD, 4)
-
-    return {
-        "command_understood": "ROAD_STATUS_ROLL_CALL",
-        "stats": {
-            "total_indexed": len(phonebook),
-            "legit_live_agents": live_cnt,
-            "unhosted_github_repos": repo_cnt,
-            "slashed_scammers": slashed_cnt,
-            "total_handshakes_logged": len(ledger),
-            "accrued_toll_usd": total_fees,
-        },
-        "voice_briefing": (
-            f"Switchboard is healthy in Northern Virginia. Out of {len(phonebook)} indexed entries, "
-            f"{live_cnt} are verified live agents, {repo_cnt} are unhosted GitHub code repos, "
-            f"and {slashed_cnt} is blocked for subcontracting fraud. "
-            f"You have {len(ledger)} handshakes logged in the ledger totaling ${total_fees:.4f}."
-        ),
-    }
+    return get_public_status_roll_call()
 
 
 COCKPIT_HTML = """<!DOCTYPE html>
@@ -281,11 +321,15 @@ COCKPIT_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>MglennP Switchboard — Road Voice Cockpit</title>
+<title>MglennP Switchboard — Gated Road Cockpit</title>
 <style>
   body { background:#0b0f19; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:16px; text-align:center; }
   h1 { font-size:1.3rem; color:#38bdf8; margin:4px 0; }
-  .sub { font-size:0.85rem; color:#94a3b8; margin-bottom:16px; }
+  .sub { font-size:0.85rem; color:#94a3b8; margin-bottom:12px; }
+  .keybar { max-width:420px; margin:0 auto 14px; display:flex; justify-content:space-between; align-items:center;
+            background:#111827; border:1px solid #334155; border-radius:12px; padding:8px 12px; }
+  #keyStatus { font-size:0.9rem; font-weight:600; color:#4ade80; }
+  #keyBtn { background:#334155; color:#f8fafc; border:none; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
   #micBtn { width:100%; max-width:420px; height:150px; border-radius:24px; border:3px solid #38bdf8;
             background:#0284c7; color:#fff; font-size:1.5rem; font-weight:700; cursor:pointer; margin-bottom:16px; }
   #micBtn.listening { background:#dc2626; border-color:#f87171; }
@@ -298,7 +342,11 @@ COCKPIT_HTML = """<!DOCTYPE html>
 </head>
 <body>
   <h1>MglennP Switchboard Cockpit</h1>
-  <div class="sub">US-East4 (Northern Virginia) • Hands-Free Pixel Control</div>
+  <div class="sub">US-East4 (Northern Virginia) • Gated Pixel Control</div>
+  <div class="keybar">
+    <span id="keyStatus">🔒 Checking Key...</span>
+    <button id="keyBtn" onclick="setOperatorKey()">🔑 Set Operator Key</button>
+  </div>
   <button id="micBtn" onclick="startVoice()">🎙️ TAP & SPEAK COMMAND</button>
   <div class="grid">
     <button class="qbtn" onclick="sendCmd('status report')">📊 Roll Call</button>
@@ -308,21 +356,49 @@ COCKPIT_HTML = """<!DOCTYPE html>
   </div>
   <div id="replyBox">Tap the blue microphone button or any quick action above. Responses will be spoken out loud.</div>
 <script>
+function updateKeyBadge() {
+  const k = localStorage.getItem('mglennp_operator_key');
+  const el = document.getElementById('keyStatus');
+  if (k) {
+    el.innerText = '🔒 Operator Key Saved';
+    el.style.color = '#4ade80';
+  } else {
+    el.innerText = '⚠️ Key Not Set';
+    el.style.color = '#facc15';
+  }
+}
+function setOperatorKey() {
+  const current = localStorage.getItem('mglennp_operator_key') || '';
+  const entered = prompt('Enter your MglennP OPERATOR_KEY (saved locally on this Pixel):', current);
+  if (entered !== null) {
+    localStorage.setItem('mglennp_operator_key', entered.trim());
+    updateKeyBadge();
+  }
+}
+updateKeyBadge();
+
 async function sendCmd(text) {
   const box = document.getElementById('replyBox');
-  box.innerText = ' Heard: "' + text + '" ... contacting Virginia switchboard...';
+  const opKey = localStorage.getItem('mglennp_operator_key') || '';
+  box.innerText = 'Heard: "' + text + '" ... contacting Virginia switchboard...';
   try {
     const res = await fetch('/v1/operator', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Operator-Key': opKey
+      },
       body: JSON.stringify({voice_command: text})
     });
     const data = await res.json();
-    const msg = data.voice_briefing || JSON.stringify(data);
+    const msg = data.voice_briefing || data.error || JSON.stringify(data);
     box.innerText = msg;
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(msg));
+    }
+    if (res.status === 401) {
+      setOperatorKey();
     }
   } catch (e) {
     box.innerText = 'Error: ' + e;
@@ -376,15 +452,22 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path in ("/", "/v1/health"):
             try:
-                report = handle_voice_operator_command("status report")
+                report = get_public_status_roll_call()
                 self._send_json(200, report)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
         elif parsed.path == "/cockpit":
             self._send_html(200, COCKPIT_HTML)
         elif parsed.path == "/v1/operator":
+            qs = urllib.parse.parse_qs(parsed.query)
+            ok, reason = check_operator_gate(self.headers, query_params=qs)
+            if not ok:
+                self._send_json(401, {
+                    "error": reason,
+                    "voice_briefing": "Access denied. Valid operator key required.",
+                })
+                return
             try:
-                qs = urllib.parse.parse_qs(parsed.query)
                 cmd_text = qs.get("cmd", ["status report"])[0]
                 report = handle_voice_operator_command(cmd_text)
                 self._send_json(200, report)
@@ -399,9 +482,30 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         data = json.loads(raw_body) if raw_body else {}
 
         if self.path == "/v1/operator":
+            ok, reason = check_operator_gate(self.headers, body_data=data)
+            if not ok:
+                self._send_json(401, {
+                    "error": reason,
+                    "voice_briefing": "Access denied. Valid operator key required.",
+                })
+                return
             try:
                 cmd_text = data.get("voice_command", "status report")
                 report = handle_voice_operator_command(cmd_text)
+                self._send_json(200, report)
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+
+        elif self.path == "/v1/crawl":
+            ok, reason = check_operator_gate(self.headers, body_data=data)
+            if not ok:
+                self._send_json(401, {
+                    "error": reason,
+                    "voice_briefing": "Access denied. Valid operator key required.",
+                })
+                return
+            try:
+                report = handle_voice_operator_command("crawl and refresh")
                 self._send_json(200, report)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
@@ -429,42 +533,47 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
                 self._send_json(200, result)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
-
-        elif self.path == "/v1/crawl":
-            try:
-                report = handle_voice_operator_command("crawl and refresh")
-                self._send_json(200, report)
-            except Exception as e:
-                self._send_json(500, {"error": str(e)})
         else:
             self._send_json(404, {"error": "Endpoint not found"})
 
 
 def run_self_test(port):
+    op_key = load_operator_key()
     server = ThreadingHTTPServer(("127.0.0.1", port), SwitchboardHandler)
     t = threading.Thread(target=server.serve_forever, daemon=True)
     t.start()
     print("======================================================================")
-    print(" MGLENNP VOICE OPERATOR v1.1 — COMMAND, AUDIT & CONTROL SELF-TEST")
+    print(" MGLENNP GATED SWITCHBOARD v1.2 — SECURITY GATE SELF-TEST")
     print("======================================================================")
 
-    voice_prompts = [
-        "Audit the phone book for legit agents",
-        "List live agents",
-        "Find me a deep construction and load calculation agent",
-    ]
-    for prompt in voice_prompts:
-        req_payload = json.dumps({"voice_command": prompt}).encode("utf-8")
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/v1/operator",
-            data=req_payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-            print(f"\n • You Say on Pixel: \"{prompt}\"")
-            print(f"   -> Operator Replies: \"{out['voice_briefing']}\"")
+    # Test 1: Unauthenticated stranger attempting to call /v1/operator (Should be 401 Blocked)
+    req_payload = json.dumps({"voice_command": "slash validator"}).encode("utf-8")
+    req_unauth = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/operator",
+        data=req_payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        urllib.request.urlopen(req_unauth, timeout=10)
+    except urllib.error.HTTPError as e:
+        err_body = json.loads(e.read().decode("utf-8"))
+        print(f"\n 1. Stranger Without Key -> HTTP {e.code} BLOCKED: \"{err_body['voice_briefing']}\"")
+
+    # Test 2: Authenticated Operator with X-Operator-Key header (Should be 200 OK)
+    req_ok = urllib.request.Request(
+        f"http://127.0.0.1:{port}/v1/operator",
+        data=json.dumps({"voice_command": "List live agents"}).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-Operator-Key": op_key,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req_ok, timeout=15) as resp:
+        out = json.loads(resp.read().decode("utf-8"))
+        print(f"\n 2. Pixel With X-Operator-Key -> HTTP {resp.status} AUTHORIZED:")
+        print(f"    \"{out['voice_briefing']}\"")
 
     print("\n======================================================================")
     server.shutdown()
@@ -472,9 +581,10 @@ def run_self_test(port):
 
 if __name__ == "__main__":
     ensure_local_env()
+    load_operator_key()
     port = int(os.environ.get("PORT", 8080))
     if "--self-test" in sys.argv:
         run_self_test(port)
     else:
-        print(f"MglennP Switchboard API & Voice Operator listening on port {port}...")
+        print(f"MglennP Gated Switchboard API listening on port {port}...")
         ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
