@@ -665,7 +665,7 @@ LANDING_HTML = """<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="header-plate">
-      <div class="stamp-tag">MglennP Mechanical Dispatch • Spec Rev 1.6</div>
+      <div class="stamp-tag">MglennP Mechanical Dispatch • Spec Rev 1.8</div>
       <h1>RADIAL SWITCHBOARD</h1>
       <div class="slogan">"An honest approach to solving everyday challenges."</div>
 
@@ -1072,6 +1072,86 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
                 self._send_json(200, result)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
+
+        elif self.path == "/v1/outcome":
+            agent_id = (data.get("agent_id") or "").strip()
+            if not agent_id:
+                self._send_json(400, {"error": "Missing required field: agent_id"})
+                return
+            outcome_success = bool(data.get("outcome_success", True))
+            measured_ms = data.get("measured_ms", None)
+            is_demo = bool(data.get("demo", False))
+            try:
+                encoded_id = urllib.parse.quote(agent_id, safe="")
+                rows = supabase_request(f"radial_agent_phonebook?agent_id=eq.{encoded_id}&select=*", method="GET", prefer="return=representation")
+                if not rows:
+                    self._send_json(404, {"error": f"Agent not found in phonebook: {agent_id}"})
+                    return
+                agent = rows[0]
+                old_code = (agent.get("mglennp_code") or "BBBA-ZES").upper()
+                old_weight = float(agent.get("synaptic_weight", 0.75))
+                old_latency = int(agent.get("avg_latency_ms", 200))
+                new_latency = old_latency
+                if measured_ms is not None:
+                    try:
+                        m_val = max(1, min(10000, int(measured_ms)))
+                        new_latency = int(round(0.6 * old_latency + 0.4 * m_val))
+                    except Exception:
+                        pass
+                lat_grade = latency_ms_to_grade(new_latency)
+                protected_seeds = ("mcp://us-east-sql-validator", "mcp://deep-cot-architect")
+                if outcome_success:
+                    new_weight = round(min(0.99, old_weight + 0.03), 4)
+                    new_merit = "A" if new_weight >= 0.90 else ("B" if new_weight >= 0.78 else "C")
+                    new_guarantee = "A"
+                    audit_status = "STAGE2_OUTCOME_VERIFIED_PASS"
+                else:
+                    new_weight = round(max(0.15, old_weight - 0.15), 4)
+                    new_merit = "D"
+                    new_guarantee = "A" if agent_id in protected_seeds else "E"
+                    audit_status = "STAGE2_OUTCOME_FAILED_QUARANTINED"
+                clean = old_code.replace("-", "")
+                if len(clean) != 7:
+                    clean = "BBBAZES"
+                chars = list(clean)
+                chars[0] = new_merit
+                chars[1] = new_guarantee
+                chars[2] = lat_grade
+                new_code = "".join(chars[:4]) + "-" + "".join(chars[4:])
+                hop_ttl = 0 if chars[4] in ("Z", "S") else 1
+                new_u64 = pack_mglennp_u64(new_code, hop_ttl=hop_ttl, version=1)
+                if not is_demo:
+                    patch_agent_in_supabase(agent_id, {
+                        "mglennp_code": new_code,
+                        "mglennp_u64": new_u64,
+                        "synaptic_weight": new_weight,
+                        "avg_latency_ms": new_latency,
+                    })
+                    supabase_request("handshake_ledger", method="POST", payload=[{
+                        "caller_intent": f"STAGE2_OUTCOME:{agent_id}",
+                        "required_coupler": old_code,
+                        "matched_agent_id": agent_id,
+                        "mglennp_code_snapshot": new_code,
+                        "hop_audit_status": audit_status,
+                        "response_latency_ms": new_latency,
+                        "outcome_success": outcome_success,
+                        "switchboard_fee_usd": 0.0,
+                        "settlement_rail": "STAGE2_OUTCOME_RECEIPT",
+                    }])
+                self._send_json(200, {
+                    "status": "OUTCOME_RECORDED" if not is_demo else "DEMO_OUTCOME_SIMULATED",
+                    "agent_id": agent_id,
+                    "outcome_success": outcome_success,
+                    "old_mglennp_code": old_code,
+                    "new_mglennp_code": new_code,
+                    "new_mglennp_u64_hex": f"0x{new_u64:016X}",
+                    "old_synaptic_weight": old_weight,
+                    "new_synaptic_weight": new_weight,
+                    "avg_latency_ms": new_latency,
+                    "quarantined": (new_guarantee == "E"),
+                })
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
         else:
             self._send_json(404, {"error": "Endpoint not found"})
 
@@ -1082,5 +1162,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v1.6 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
 
 
