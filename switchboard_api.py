@@ -69,18 +69,37 @@ def check_operator_gate(headers, query_params=None, body_data=None):
     return True, "Authorized"
 
 
-def fetch_phonebook_from_supabase():
-    rows = supabase_request("radial_agent_phonebook?select=*&limit=5000", method="GET", prefer="return=representation")
-    for r in rows:
+def fetch_phonebook_from_supabase(max_rows=50000):
+    all_rows = []
+    offset = 0
+    while offset < max_rows:
+        batch = supabase_request(f"radial_agent_phonebook?select=*&limit=1000&offset={offset}", method="GET", prefer="return=representation")
+        if not batch:
+            break
+        all_rows.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    for r in all_rows:
         r["radial_bitmask"] = int(r["radial_bitmask"])
         r["mglennp_u64"] = int(r["mglennp_u64"])
         r["synaptic_weight"] = float(r["synaptic_weight"])
         r["avg_latency_ms"] = int(r["avg_latency_ms"])
-    return rows
+    return all_rows
 
 
-def fetch_ledger_from_supabase():
-    return supabase_request("handshake_ledger?select=*&limit=5000", method="GET", prefer="return=representation")
+def fetch_ledger_from_supabase(max_rows=20000):
+    all_rows = []
+    offset = 0
+    while offset < max_rows:
+        batch = supabase_request(f"handshake_ledger?select=*&limit=1000&offset={offset}", method="GET", prefer="return=representation")
+        if not batch:
+            break
+        all_rows.extend(batch)
+        if len(batch) < 1000:
+            break
+        offset += 1000
+    return all_rows
 
 
 def log_handshake_to_ledger(intent, coupler, matched_agent, rail="EXTERNAL_AGENT_MATCH"):
