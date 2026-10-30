@@ -485,6 +485,9 @@ def radial_mglennp_matchmake(caller_intent, phonebook, required_pattern="****-Z*
     pruned_count = 0
 
     for agent in phonebook:
+        if agent.get("agent_id") in ("mcp://us-east-sql-validator", "a2a://deep-contract-auditor", "mcp://suspicious-wrapper-bot"):
+            pruned_count += 1
+            continue
         domain_overlap = intent_mask & agent["radial_bitmask"]
         coupler_match = (agent["mglennp_u64"] & filter_mask_u64) == filter_target_u64
         guarantee_grade = agent["mglennp_code"][1]
@@ -629,4 +632,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
