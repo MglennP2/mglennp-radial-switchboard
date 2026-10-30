@@ -475,9 +475,10 @@ def crawl_public_agent_phonebook(max_pages=MAX_PAGES_PER_CRAWL, reset_cursor=Fal
     return phonebook
 
 
-def radial_mglennp_matchmake(caller_intent, phonebook, required_pattern="****-Z**"):
+def radial_mglennp_matchmake(caller_intent, phonebook, required_pattern="****-Z**", mode="single"):
     t0 = time.perf_counter()
     intent_mask = compute_radial_fingerprint(caller_intent)
+    intent_bits_total = max(1, bin(intent_mask).count("1"))
     filter_mask_u64, filter_target_u64 = build_wildcard_filter_u64(required_pattern)
 
     survivors = []
@@ -493,19 +494,72 @@ def radial_mglennp_matchmake(caller_intent, phonebook, required_pattern="****-Z*
             continue
         bit_score = bin(domain_overlap).count("1")
         resonance = round(bit_score * agent["synaptic_weight"] * (1000.0 / max(agent["avg_latency_ms"], 50)), 4)
-        survivors.append((resonance, agent))
+        survivors.append((resonance, agent, domain_overlap))
 
     survivors.sort(key=lambda x: x[0], reverse=True)
+
+    if str(mode).lower() == "crew" and len(survivors) >= 1:
+        # Slot 1: Fast Execution / Compute Lead (boosts Synchronous 'S' preference)
+        slot1_tuple = max(
+            survivors,
+            key=lambda x: x[0] * (1.25 if x[1]["mglennp_code"].endswith("S") else 1.0)
+        )
+        slot1_score, slot1_ag, slot1_ov = slot1_tuple
+        used_ids = {slot1_ag["agent_id"]}
+        uncovered_mask = intent_mask & (~slot1_ag["radial_bitmask"])
+
+        # Slot 2: Complementary Domain / Knowledge Specialist (targets uncovered capability bits)
+        rem_for_slot2 = [s for s in survivors if s[1]["agent_id"] not in used_ids]
+        slot2_tuple = None
+        if rem_for_slot2:
+            def _complement_key(item):
+                base_sc, ag, _ = item
+                comp_bits = bin(uncovered_mask & ag["radial_bitmask"]).count("1")
+                novel_bits = bin(ag["radial_bitmask"] & (~slot1_ag["radial_bitmask"])).count("1")
+                deep_boost = 1.35 if ag["mglennp_code"].endswith("D") else 1.0
+                return ((comp_bits * 25.0) + (novel_bits * 4.0) + base_sc) * deep_boost
+            slot2_tuple = max(rem_for_slot2, key=_complement_key)
+            used_ids.add(slot2_tuple[1]["agent_id"])
+
+        # Slot 3: Independent Verification & Audit Node (high synaptic weight + distinct identity)
+        rem_for_slot3 = [s for s in survivors if s[1]["agent_id"] not in used_ids]
+        slot3_tuple = None
+        if rem_for_slot3:
+            slot3_tuple = max(
+                rem_for_slot3,
+                key=lambda x: (x[1]["synaptic_weight"] * 50.0) + x[0]
+            )
+            used_ids.add(slot3_tuple[1]["agent_id"])
+
+        crew_tuples = [
+            ("1_COMPUTE_EXECUTION", slot1_tuple),
+            ("2_DOMAIN_KNOWLEDGE_COMPLEMENT", slot2_tuple),
+            ("3_INDEPENDENT_VERIFICATION", slot3_tuple),
+        ]
+        selected = [(role, sc, ag, ov) for role, tup in crew_tuples if tup is not None for (sc, ag, ov) in [tup]]
+    else:
+        selected = [("PRIMARY_MATCH", sc, ag, ov) for (sc, ag, ov) in survivors[:3]]
+
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 3)
+
+    single_cov_bits = bin(survivors[0][2]).count("1") if survivors else 0
+    combined_mask = 0
+    for _, _, ag, _ in selected:
+        combined_mask |= (intent_mask & ag["radial_bitmask"])
+    crew_cov_bits = bin(combined_mask).count("1")
 
     return {
         "caller_intent": caller_intent,
         "required_coupler": required_pattern,
+        "dispatch_mode": "crew" if str(mode).lower() == "crew" else "single",
         "local_smell_test_time_ms": elapsed_ms,
         "pruned_count": pruned_count,
+        "single_agent_coverage_pct": round((single_cov_bits / intent_bits_total) * 100, 1) if survivors else 0.0,
+        "crew_combined_coverage_pct": round((crew_cov_bits / intent_bits_total) * 100, 1) if selected else 0.0,
         "matches": [
             {
                 "rank": idx + 1,
+                "crew_role": role,
                 "agent_id": ag["agent_id"],
                 "name": ag["name"],
                 "endpoint": ag.get("endpoint", ""),
@@ -513,8 +567,9 @@ def radial_mglennp_matchmake(caller_intent, phonebook, required_pattern="****-Z*
                 "mglennp_u64_hex": ag["mglennp_u64_hex"],
                 "avg_latency_ms": ag["avg_latency_ms"],
                 "resonance_score": score,
+                "matched_domain_bits": bin(ov).count("1"),
             }
-            for idx, (score, ag) in enumerate(survivors[:3])
+            for idx, (role, score, ag, ov) in enumerate(selected)
         ],
     }
 
@@ -574,3 +629,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
