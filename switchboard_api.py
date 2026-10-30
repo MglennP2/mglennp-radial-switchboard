@@ -117,24 +117,22 @@ def log_handshake_to_ledger(intent, coupler, matched_agent, rail="EXTERNAL_AGENT
 
 
 def log_discovery_pull_async(beacon_path, user_agent):
-    """Logs a $0.00 telemetry entry when external AI crawlers or agents pull /llms.txt, /openapi.json, or /.well-known/mcp.json."""
+    """Logs a $0.00 telemetry entry synchronously when external AI crawlers or agents pull /llms.txt, /openapi.json, or /.well-known/mcp.json."""
     ua_short = (user_agent or "unknown-agent").strip()[:140]
-    def _worker():
-        try:
-            supabase_request("handshake_ledger", method="POST", payload=[{
-                "caller_intent": f"BEACON_PULL:{beacon_path} [{ua_short}]",
-                "required_coupler": "BEACON",
-                "matched_agent_id": "mcp://mglennp-switchboard-beacon",
-                "mglennp_code_snapshot": "AAAB-ZES",
-                "hop_audit_status": "BEACON_DISCOVERY_READ",
-                "response_latency_ms": 1,
-                "outcome_success": True,
-                "switchboard_fee_usd": 0.0,
-                "settlement_rail": "BEACON_DISCOVERY_PULL",
-            }])
-        except Exception:
-            pass
-    threading.Thread(target=_worker, daemon=True).start()
+    try:
+        supabase_request("handshake_ledger", method="POST", payload=[{
+            "caller_intent": f"BEACON_PULL:{beacon_path} [{ua_short}]",
+            "required_coupler": "BEACON",
+            "matched_agent_id": "mcp://us-east-sql-validator",
+            "mglennp_code_snapshot": "AAAB-ZES",
+            "hop_audit_status": "BEACON_DISCOVERY_READ",
+            "response_latency_ms": 1,
+            "outcome_success": True,
+            "switchboard_fee_usd": 0.0,
+            "settlement_rail": "BEACON_DISCOVERY_PULL",
+        }])
+    except Exception as e:
+        print(f"[TELEMETRY WARN] Beacon log failed: {e}")
 
 
 def patch_agent_in_supabase(agent_id, fields):
@@ -1017,3 +1015,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v1.6 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
