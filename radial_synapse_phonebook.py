@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 SCHEMA_VERSION_V1 = 0x1
 SUPABASE_PROJECT_URL = "https://malvgodkmfgdzswbhcyj.supabase.co"
-OFFICIAL_MCP_REGISTRY_BASE = "https://registry.modelcontextprotocol.io/v0/servers"
+OFFICIAL_MCP_REGISTRY_BASE = "https://registry.modelcontextprotocol.io/v0.1/servers"
 HANDSHAKE_FEE_USD = 0.0001
 
 # Mechanical Governor Limits (Zero-Cost Cloud Run Protection)
@@ -336,7 +336,7 @@ def crawl_public_agent_phonebook(max_pages=MAX_PAGES_PER_CRAWL, reset_cursor=Fal
         if (time.perf_counter() - t_start) >= (MAX_CRAWL_WALL_SECONDS * 0.6):
             break
 
-        params = {"limit": "100"}
+        params = {"limit": "100", "version": "latest"}
         if cursor:
             params["cursor"] = cursor
         page_url = f"{OFFICIAL_MCP_REGISTRY_BASE}?{urllib.parse.urlencode(params)}"
