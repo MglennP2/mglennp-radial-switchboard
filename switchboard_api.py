@@ -728,9 +728,25 @@ LANDING_HTML = """<!DOCTYPE html>
     </div>
 
     <div class="card">
-      <h2>Front-Door Dispatch API (Direct Agent Access)</h2>
+      <h2>Live Stage 1 "Glance" &amp; Stage 2 Handoff Console (Interactive Benchmark)</h2>
       <p>
-        Autonomous agents and MCP routers can query the live Virginia phonebook directly via <span class="code-badge">POST https://radialswitchboard.com/v1/matchmake</span>. Dead endpoints (<span class="code-badge">Grade E</span>) and unhosted GitHub repositories (<span class="code-badge">Grade D</span>) are automatically quarantined out of live dispatch.
+        Test the live 64-bit matchmaker against all <strong>1,800+ indexed agents</strong> right now. In <strong>Stage 1 (The Glance)</strong>, Radial Switchboard prunes dead endpoints (<span class="code-badge">Grade E</span>) and dormant GitHub repos (<span class="code-badge">Grade D</span>) in under 0.4ms. In <strong>Stage 2 (The Conversation)</strong>, your agent connects directly to the winning partner's verified endpoint to collaborate.
+      </p>
+      <div style="display:flex; flex-wrap:wrap; gap:8px; margin:12px 0;">
+        <button type="button" onclick="setPreset('fast github coding and sql database validation','****-Z**')" style="background:#0c141f; color:var(--brass); border:1px solid var(--brass-dim); padding:6px 10px; border-radius:5px; cursor:pointer; font-size:0.82rem;">Preset 1: SQL + GitHub Validator</button>
+        <button type="button" onclick="setPreset('deep construction cad and finance contract analysis','****-Z**')" style="background:#0c141f; color:var(--brass); border:1px solid var(--brass-dim); padding:6px 10px; border-radius:5px; cursor:pointer; font-size:0.82rem;">Preset 2: Construction &amp; Finance Specialist</button>
+        <button type="button" onclick="setPreset('live web search weather and maps lookup','****-Z**')" style="background:#0c141f; color:var(--brass); border:1px solid var(--brass-dim); padding:6px 10px; border-radius:5px; cursor:pointer; font-size:0.82rem;">Preset 3: Web Search &amp; Maps Node</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 160px auto; gap:10px; margin-bottom:12px;">
+        <input id="demoIntent" type="text" value="fast github coding and sql database validation" placeholder="Describe the capability gap your agent needs..." style="background:#080d14; border:1px solid #243447; color:#f1f5f9; padding:10px 12px; border-radius:6px; font-family:inherit; font-size:0.92rem;">
+        <input id="demoCoupler" type="text" value="****-Z**" title="7-Char MGLE-NNP Coupler Pattern" style="background:#080d14; border:1px solid #243447; color:var(--brass); padding:10px 12px; border-radius:6px; font-family:ui-monospace,Consolas,monospace; font-size:0.92rem; text-align:center; font-weight:700;">
+        <button type="button" onclick="runLiveMatchDemo()" id="demoBtn" style="background:var(--brass); color:#0a111a; border:none; padding:10px 18px; border-radius:6px; font-weight:800; cursor:pointer; font-size:0.92rem;">⚡ Run Stage 1 Glance</button>
+      </div>
+      <div id="demoResultBox" style="background:#080d14; border:1px solid #243447; border-radius:6px; padding:14px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:0.84rem; color:#cbd5e1; margin-bottom:14px;">
+        Click <strong>⚡ Run Stage 1 Glance</strong> above to benchmark live 64-bit filtering across the Virginia Supabase directory (Zero-charge UI test mode).
+      </div>
+      <p style="margin-bottom:6px; font-size:0.9rem;">
+        <strong>Direct Autonomous Agent Dispatch (<span class="code-badge">POST https://radialswitchboard.com/v1/matchmake</span>):</strong>
       </p>
       <pre class="code-block">POST https://radialswitchboard.com/v1/matchmake
 Content-Type: application/json
@@ -743,6 +759,52 @@ Content-Type: application/json
         Machine Discovery Beacons: <a href="/llms.txt">/llms.txt</a> • <a href="/openapi.json">/openapi.json</a> • <a href="/.well-known/mcp.json">/.well-known/mcp.json</a> • <a href="/v1/health">/v1/health</a>
       </p>
     </div>
+    <script>
+      function setPreset(intentText, couplerText) {
+        document.getElementById('demoIntent').value = intentText;
+        document.getElementById('demoCoupler').value = couplerText;
+        runLiveMatchDemo();
+      }
+      async function runLiveMatchDemo() {
+        const box = document.getElementById('demoResultBox');
+        const btn = document.getElementById('demoBtn');
+        const intent = document.getElementById('demoIntent').value.trim() || 'general helper';
+        const coupler = document.getElementById('demoCoupler').value.trim() || '****-Z**';
+        btn.disabled = true;
+        btn.innerText = 'Scanning 64-Bit Index...';
+        box.innerHTML = '⏳ Running 64-bit bitwise pass across Virginia phonebook...';
+        const t0 = performance.now();
+        try {
+          const res = await fetch('/v1/matchmake', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({intent: intent, coupler: coupler, demo: true})
+          });
+          const data = await res.json();
+          const rttMs = Math.round(performance.now() - t0);
+          if (!data.matches || data.matches.length === 0) {
+            box.innerHTML = '⚠️ No live callable agents matched pattern <strong>' + coupler + '</strong>. (Pruned ' + (data.pruned_count || 0) + ' candidates in ' + (data.local_smell_test_time_ms || 0) + 'ms).';
+          } else {
+            const top = data.matches[0];
+            let html = '<div style="color:#22c55e; font-weight:700; margin-bottom:8px;">✓ STAGE 1 GLANCE COMPLETE — 64-BIT CPU FILTER: ' + data.local_smell_test_time_ms + ' ms | NETWORK RTT: ' + rttMs + ' ms</div>';
+            html += '<div style="color:#94a3b8; margin-bottom:10px;">Scanned ' + (data.total_indexed_scanned || '1,800+') + ' total indexed (' + (data.live_callable_pool || '1,500+') + ' live callable pool) • Pruned ' + data.pruned_count + ' non-matching/dead nodes</div>';
+            for (let i = 0; i < data.matches.length; i++) {
+              const m = data.matches[i];
+              html += '<div style="border:1px solid #263548; background:#0d1622; padding:10px; border-radius:5px; margin-bottom:8px;">';
+              html += '<div style="color:#f1f5f9; font-weight:700;">#' + m.rank + ' ' + m.name + ' <span style="color:#d4af37;">[' + m.mglennp_code + ']</span> <span style="color:#64748b;">(' + m.mglennp_u64_hex + ')</span></div>';
+              html += '<div style="color:#94a3b8; font-size:0.8rem; margin-top:3px;">Agent ID: ' + m.agent_id + ' • Heartbeat Latency: ' + m.avg_latency_ms + 'ms • Resonance: ' + m.resonance_score + '</div>';
+              html += '<div style="color:#38bdf8; font-size:0.8rem; margin-top:4px;">➔ <strong>Stage 2 Direct Peer Handoff Endpoint:</strong> ' + (m.endpoint || 'mcp://direct-handoff') + '</div>';
+              html += '</div>';
+            }
+            box.innerHTML = html;
+          }
+        } catch (err) {
+          box.innerHTML = '❌ Error querying switchboard: ' + err;
+        }
+        btn.disabled = false;
+        btn.innerText = '⚡ Run Stage 1 Glance';
+      }
+    </script>
 
     <div class="card">
       <h2>Why This Exists: Solving the 55,000-Token Bloat Tax</h2>
@@ -997,10 +1059,15 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
 
         elif self.path == "/v1/matchmake":
             intent, coupler = data.get("intent", "general helper"), data.get("coupler", "****-Z**")
+            is_demo = bool(data.get("demo", False))
             try:
-                live_only = [a for a in fetch_phonebook_from_supabase() if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
+                phonebook = fetch_phonebook_from_supabase()
+                live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
                 result = radial_mglennp_matchmake(intent, live_only, required_pattern=coupler)
-                if result["matches"]:
+                result["total_indexed_scanned"] = len(phonebook)
+                result["live_callable_pool"] = len(live_only)
+                result["demo_mode"] = is_demo
+                if result["matches"] and not is_demo:
                     log_handshake_to_ledger(intent, coupler, result["matches"][0], rail="EXTERNAL_AGENT_MATCH")
                 self._send_json(200, result)
             except Exception as e:
@@ -1015,4 +1082,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v1.6 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
 
