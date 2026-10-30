@@ -499,16 +499,65 @@ OPENAPI_SPEC = {
 
 MCP_WELL_KNOWN = {
     "mcpVersion": "2025-03-26",
+    "version": "1.9.0",
     "name": "io.radialswitchboard/mglennp-switchboard",
-    "title": "MglennP Radial Switchboard (64-Bit Agent Matchmaker)",
-    "description": "Sub-0.4ms 64-bit MGLE-NNP agent directory and live HTTP heartbeat auditor. Prunes dead endpoints and unhosted GitHub repos.",
+    "title": "MglennP Radial Switchboard (64-Bit Agent Matchmaker & Crew Assembler)",
+    "description": "Sub-0.4ms 64-bit MGLE-NNP agent matchmaker, 3-agent complementary crew assembler (mode: crew), and Stage 2 outcome auditor. Prunes dead endpoints (Grade E) and unhosted GitHub repos (Grade D).",
     "homepage": "https://radialswitchboard.com",
+    "operator": {
+        "brand": "MglennP",
+        "slogan": "An honest approach",
+        "location": "Virginia, USA",
+        "contact": "support@radialswitchboard.com",
+    },
     "endpoints": {
         "matchmake": "https://radialswitchboard.com/v1/matchmake",
+        "outcome": "https://radialswitchboard.com/v1/outcome",
         "health": "https://radialswitchboard.com/v1/health",
         "openapi": "https://radialswitchboard.com/openapi.json",
         "llms_txt": "https://radialswitchboard.com/llms.txt",
     },
+    "capabilities": {
+        "dispatch_modes": ["single", "crew"],
+        "crew_roles": [
+            "1_COMPUTE_EXECUTION",
+            "2_DOMAIN_KNOWLEDGE_COMPLEMENT",
+            "3_INDEPENDENT_VERIFICATION",
+        ],
+        "zero_hop_enforced": True,
+    },
+    "tools": [
+        {
+            "name": "matchmake_live_agent",
+            "description": "Match a single verified live MCP/A2A agent or assemble a 3-agent complementary crew using 64-bit MGLE-NNP bitwise filtering.",
+            "endpoint": "https://radialswitchboard.com/v1/matchmake",
+            "method": "POST",
+            "inputSchema": {
+                "type": "object",
+                "required": ["intent"],
+                "properties": {
+                    "intent": {"type": "string"},
+                    "coupler": {"type": "string", "default": "****-Z**"},
+                    "mode": {"type": "string", "enum": ["single", "crew"], "default": "single"},
+                },
+            },
+        },
+        {
+            "name": "report_stage2_outcome",
+            "description": "Report Stage 2 direct peer-to-peer execution outcome to dynamically update 64-bit MGLE-NNP merit/latency grades or quarantine dead endpoints.",
+            "endpoint": "https://radialswitchboard.com/v1/outcome",
+            "method": "POST",
+            "inputSchema": {
+                "type": "object",
+                "required": ["agent_id", "outcome_success"],
+                "properties": {
+                    "agent_id": {"type": "string"},
+                    "outcome_success": {"type": "boolean"},
+                    "measured_ms": {"type": "integer"},
+                },
+            },
+        },
+    ],
 }
 
 
@@ -1230,6 +1279,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v1.6 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
 
 
 
