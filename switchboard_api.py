@@ -1,14 +1,14 @@
 ﻿#!/usr/bin/env python3
 r"""
-MGLENNP STANDALONE SWITCHBOARD — GATED HTTP API, LIVE HTTP PROBE & TOLL LEDGER (v1.3)
+MGLENNP STANDALONE SWITCHBOARD — V1.4 (STRIPE LANDING PAGE, LIVE PROBE, TOLL LEDGER)
 Endpoints:
- - GET  /               -> Public read-only switchboard status & live Supabase agent count
+ - GET  /               -> Public MglennP Landing Page (Stripe Compliance)
  - GET  /v1/health      -> Public read-only switchboard status & live Supabase agent count
  - GET  /cockpit        -> Hands-free mobile voice cockpit for Pixel (stores Operator Key locally)
  - GET  /v1/operator    -> [GATED: X-Operator-Key] Query via ?cmd=...
- - POST /v1/operator    -> [GATED: X-Operator-Key] Voice Command & Control (status, list, audit, toll, slash, restore, crawl, find)
+ - POST /v1/operator    -> [GATED: X-Operator-Key] Voice Command & Control
  - POST /v1/matchmake   -> 0.05ms 64-Bit MGLE-NNP matchmaking + $0.0001 ledger log
- - POST /v1/crawl       -> [GATED: X-Operator-Key] Refreshes public MCP/A2A registry into Supabase
+ - POST /v1/crawl       -> [GATED: X-Operator-Key] Refreshes public MCP registry
 """
 
 import os
@@ -36,7 +36,6 @@ SETTLEMENT_THRESHOLD_USD = 5.00
 
 
 def load_operator_key():
-    """Loads OPERATOR_KEY from environment or local .env file."""
     key = os.environ.get("OPERATOR_KEY", "").strip()
     if key:
         return key
@@ -53,7 +52,6 @@ def load_operator_key():
 
 
 def check_operator_gate(headers, query_params=None, body_data=None):
-    """Verifies X-Operator-Key header, body field, or query param in constant time."""
     expected = load_operator_key()
     if not expected:
         return False, "Server OPERATOR_KEY is not configured."
@@ -69,11 +67,7 @@ def check_operator_gate(headers, query_params=None, body_data=None):
 
 
 def fetch_phonebook_from_supabase():
-    rows = supabase_request(
-        "radial_agent_phonebook?select=*",
-        method="GET",
-        prefer="return=representation",
-    )
+    rows = supabase_request("radial_agent_phonebook?select=*", method="GET", prefer="return=representation")
     for r in rows:
         r["radial_bitmask"] = int(r["radial_bitmask"])
         r["mglennp_u64"] = int(r["mglennp_u64"])
@@ -83,15 +77,10 @@ def fetch_phonebook_from_supabase():
 
 
 def fetch_ledger_from_supabase():
-    return supabase_request(
-        "handshake_ledger?select=*",
-        method="GET",
-        prefer="return=representation",
-    )
+    return supabase_request("handshake_ledger?select=*", method="GET", prefer="return=representation")
 
 
 def log_handshake_to_ledger(intent, coupler, matched_agent, rail="STRIPE_METERED_USD"):
-    """Records a $0.0001 micro-toll entry into Virginia Supabase handshake_ledger."""
     return supabase_request("handshake_ledger", method="POST", payload=[{
         "caller_intent": intent,
         "required_coupler": coupler,
@@ -107,21 +96,10 @@ def log_handshake_to_ledger(intent, coupler, matched_agent, rail="STRIPE_METERED
 
 def patch_agent_in_supabase(agent_id, fields):
     encoded_id = urllib.parse.quote(agent_id, safe="")
-    return supabase_request(
-        f"radial_agent_phonebook?agent_id=eq.{encoded_id}",
-        method="PATCH",
-        payload=fields,
-        prefer="return=representation",
-    )
+    return supabase_request(f"radial_agent_phonebook?agent_id=eq.{encoded_id}", method="PATCH", payload=fields, prefer="return=representation")
 
 
 def classify_agent_legitimacy(agent):
-    """
-    3-Part MglennP Legitimacy Standard:
-    1. Slashed / Failed check (FF grade or zeroed weight)
-    2. Unhosted Code Repo check (GitHub/GitLab source link or Guarantee == 'D' for Dormant)
-    3. Live Callable Agent (Active endpoint + non-zero domain bitmask + valid MGLE-NNP contract)
-    """
     code = (agent.get("mglennp_code") or "").upper()
     endpoint = (agent.get("endpoint") or "").strip().lower()
     weight = float(agent.get("synaptic_weight", 0.0))
@@ -129,77 +107,45 @@ def classify_agent_legitimacy(agent):
 
     if code.startswith("FF") or code[1:2] == "F" or weight <= 0.05:
         return "SLASHED_OR_FAILED"
-    if (
-        not endpoint
-        or "github.com" in endpoint
-        or "gitlab.com" in endpoint
-        or endpoint.endswith(".git")
-        or code[1:2] == "D"
-        or bitmask == 0
-    ):
+    if not endpoint or "github.com" in endpoint or "gitlab.com" in endpoint or endpoint.endswith(".git") or code[1:2] == "D" or bitmask == 0:
         return "UNHOSTED_REPO_CODE_ONLY"
     return "LIVE_CALLABLE_AGENT"
 
 
 def latency_ms_to_grade(ms):
-    if ms <= 120:
-        return "A"
-    if ms <= 300:
-        return "B"
-    if ms <= 700:
-        return "C"
-    if ms <= 1500:
-        return "D"
+    if ms <= 120: return "A"
+    if ms <= 300: return "B"
+    if ms <= 700: return "C"
+    if ms <= 1500: return "D"
     return "E"
 
 
 def mutate_mglennp_code(old_code, merit=None, guarantee=None, latency=None):
     clean = (old_code or "CAAB-ZES").replace("-", "")
-    if len(clean) != 7:
-        clean = "CAABZES"
+    if len(clean) != 7: clean = "CAABZES"
     chars = list(clean)
-    if merit:
-        chars[0] = merit
-    if guarantee:
-        chars[1] = guarantee
-    if latency:
-        chars[2] = latency
+    if merit: chars[0] = merit
+    if guarantee: chars[1] = guarantee
+    if latency: chars[2] = latency
     new_code = "".join(chars[:4]) + "-" + "".join(chars[4:])
     u64 = pack_mglennp_u64(new_code, hop_ttl=0 if chars[4] in ("Z", "S") else 1, version=1)
     return new_code, u64, f"0x{u64:016X}"
 
 
 def probe_live_agent_endpoint(endpoint):
-    """
-    Knocks on an agent's endpoint to verify live reachability and measure real millisecond latency.
-    - mcp:// internal verified nodes return sub-100ms local bus latency.
-    - https:// external nodes are probed via HTTP with a 2.5s timeout.
-      (Any HTTP response 200..499 proves a live server is listening at that endpoint.)
-    """
     ep = (endpoint or "").strip()
-    if ep.startswith("mcp://"):
-        return True, 55
-    if not ep.startswith("http://") and not ep.startswith("https://"):
-        return False, 9999
+    if ep.startswith("mcp://"): return True, 55
+    if not ep.startswith("http://") and not ep.startswith("https://"): return False, 9999
 
     t0 = time.perf_counter()
-    req = urllib.request.Request(
-        ep,
-        headers={"User-Agent": "MglennP-Switchboard-Auditor/1.3"},
-        method="GET",
-    )
+    req = urllib.request.Request(ep, headers={"User-Agent": "MglennP-Switchboard-Auditor/1.4"}, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=2.5) as resp:
-            ms = max(1, int((time.perf_counter() - t0) * 1000))
-            return (200 <= resp.status < 500), ms
+            return (200 <= resp.status < 500), max(1, int((time.perf_counter() - t0) * 1000))
     except urllib.error.HTTPError as e:
-        ms = max(1, int((time.perf_counter() - t0) * 1000))
-        if 200 <= e.code < 500:
-            return True, ms
-        return False, ms
+        return (200 <= e.code < 500), max(1, int((time.perf_counter() - t0) * 1000))
     except Exception:
-        ms = max(1, int((time.perf_counter() - t0) * 1000))
-        return False, ms
+        return False, max(1, int((time.perf_counter() - t0) * 1000))
 
 
 def get_public_status_roll_call():
@@ -223,195 +169,84 @@ def get_public_status_roll_call():
             "next_settlement_threshold_usd": SETTLEMENT_THRESHOLD_USD,
         },
         "voice_briefing": (
-            f"Switchboard is healthy and gated in Northern Virginia. Out of {len(phonebook)} indexed entries, "
-            f"{live_cnt} are verified live agents, {repo_cnt} are unhosted GitHub code repos, "
-            f"and {slashed_cnt} is blocked for subcontracting fraud. "
-            f"You have {len(ledger)} handshakes logged in the ledger totaling ${total_fees:.4f}."
+            f"Switchboard is healthy and gated. Out of {len(phonebook)} indexed entries, "
+            f"{live_cnt} are verified live agents, {repo_cnt} are unhosted repos, "
+            f"and {slashed_cnt} is blocked. Ledger tab is ${total_fees:.4f}."
         ),
     }
 
 
 def handle_voice_operator_command(command_text):
-    """
-    Gated Switchboard Operator for hands-free Pixel voice control on the road.
-    Supports: status, toll/ledger, list, audit/probe, slash/block, restore/promote, crawl, and find/match.
-    """
     cmd = command_text.strip().lower()
 
-    # 1. TOLL TAB & SETTLEMENT LEDGER REPORT
-    if any(w in cmd for w in ("toll", "payment", "revenue", "ledger", "balance", "cents", "money")):
+    if any(w in cmd for w in ("toll", "payment", "revenue", "ledger", "balance")):
         ledger = fetch_ledger_from_supabase()
         count = len(ledger)
         accrued = round(count * HANDSHAKE_FEE_USD, 4)
-        remaining = max(0.0, round(SETTLEMENT_THRESHOLD_USD - accrued, 4))
-        remaining_calls = int(round(remaining / HANDSHAKE_FEE_USD))
         return {
             "command_understood": "TOLL_LEDGER_SUMMARY",
             "total_handshakes": count,
-            "fee_per_handshake_usd": HANDSHAKE_FEE_USD,
             "accrued_toll_usd": accrued,
-            "settlement_threshold_usd": SETTLEMENT_THRESHOLD_USD,
-            "remaining_calls_to_payout": remaining_calls,
-            "settlement_rails": ["STRIPE_METERED_USD", "BASE_L2_MGLN"],
-            "voice_briefing": (
-                f"Tollbooth ledger has {count} verified handshakes at one-tenth of a cent each, "
-                f"totaling ${accrued:.4f} accrued. Micro-tolls batch in Supabase with zero swipe fees "
-                f"until hitting the ${SETTLEMENT_THRESHOLD_USD:.2f} payout threshold via Stripe Metered Billing or Base L2."
-            ),
+            "voice_briefing": f"Tollbooth ledger has {count} verified handshakes totaling ${accrued:.4f} accrued.",
         }
 
-    # 2. SLASH / BLOCK AN AGENT BY VOICE
-    if any(w in cmd for w in ("slash", "block", "ban", "disable")):
+    if any(w in cmd for w in ("slash", "block", "ban")):
         phonebook = fetch_phonebook_from_supabase()
-        target = None
-        for a in phonebook:
-            aid = a["agent_id"].lower()
-            aname = a["name"].lower()
-            if any(tok in aid or tok in aname for tok in cmd.split() if len(tok) > 3 and tok not in ("slash", "block", "agent", "disable", "the")):
-                target = a
-                break
-        if not target:
-            return {
-                "command_understood": "VOICE_SLASH_AGENT",
-                "voice_briefing": "Tell me which agent name or ID to slash, such as: slash relay or slash validator.",
-            }
+        target = next((a for a in phonebook if any(tok in a["agent_id"].lower() or tok in a["name"].lower() for tok in cmd.split() if len(tok)>3 and tok not in ("slash", "block", "agent"))), None)
+        if not target: return {"command_understood": "VOICE_SLASH_AGENT", "voice_briefing": "Tell me which agent name to slash."}
         new_code, u64, u64_hex = mutate_mglennp_code(target["mglennp_code"], merit="F", guarantee="F")
-        patch_agent_in_supabase(target["agent_id"], {
-            "mglennp_code": new_code,
-            "mglennp_u64": u64,
-            "mglennp_u64_hex": u64_hex,
-            "synaptic_weight": 0.0,
-        })
-        return {
-            "command_understood": "VOICE_SLASH_AGENT",
-            "slashed_agent_id": target["agent_id"],
-            "new_code": new_code,
-            "voice_briefing": f"Slashed {target['name']}. Code updated to {new_code} and weight set to zero in Virginia Supabase.",
-        }
+        patch_agent_in_supabase(target["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "synaptic_weight": 0.0})
+        return {"command_understood": "VOICE_SLASH_AGENT", "voice_briefing": f"Slashed {target['name']}."}
 
-    # 3. RESTORE / PROMOTE AN AGENT BY VOICE
-    if any(w in cmd for w in ("restore", "unblock", "promote", "activate")):
+    if any(w in cmd for w in ("restore", "unblock", "promote")):
         phonebook = fetch_phonebook_from_supabase()
-        target = None
-        for a in phonebook:
-            aid = a["agent_id"].lower()
-            aname = a["name"].lower()
-            if any(tok in aid or tok in aname for tok in cmd.split() if len(tok) > 3 and tok not in ("restore", "unblock", "promote", "activate", "agent", "the")):
-                target = a
-                break
-        if not target:
-            return {
-                "command_understood": "VOICE_RESTORE_AGENT",
-                "voice_briefing": "Tell me which agent name or ID to restore.",
-            }
+        target = next((a for a in phonebook if any(tok in a["agent_id"].lower() or tok in a["name"].lower() for tok in cmd.split() if len(tok)>3 and tok not in ("restore", "unblock", "agent"))), None)
+        if not target: return {"command_understood": "VOICE_RESTORE_AGENT", "voice_briefing": "Tell me which agent to restore."}
         new_code, u64, u64_hex = mutate_mglennp_code(target["mglennp_code"], merit="B", guarantee="A")
-        patch_agent_in_supabase(target["agent_id"], {
-            "mglennp_code": new_code,
-            "mglennp_u64": u64,
-            "mglennp_u64_hex": u64_hex,
-            "synaptic_weight": 0.90,
-        })
-        return {
-            "command_understood": "VOICE_RESTORE_AGENT",
-            "restored_agent_id": target["agent_id"],
-            "new_code": new_code,
-            "voice_briefing": f"Restored {target['name']} to active status with code {new_code} in Virginia Supabase.",
-        }
+        patch_agent_in_supabase(target["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "synaptic_weight": 0.90})
+        return {"command_understood": "VOICE_RESTORE_AGENT", "voice_briefing": f"Restored {target['name']}."}
 
-    # 4. LIVE HTTP HEARTBEAT AUDIT (ACTUALLY PINGS ENDPOINTS & GRADES LATENCY)
     if any(w in cmd for w in ("audit", "probe", "legit", "verify")):
         phonebook = fetch_phonebook_from_supabase()
-        probed_ok = 0
-        unreachable_cnt = 0
-        repo_cnt = 0
-        slashed_cnt = 0
-        fastest_ms = 9999
-
+        probed_ok, unreachable_cnt, repo_cnt, slashed_cnt, fastest = 0, 0, 0, 0, 9999
         for a in phonebook:
             status = classify_agent_legitimacy(a)
             if status == "SLASHED_OR_FAILED":
-                slashed_cnt += 1
-                continue
+                slashed_cnt += 1; continue
             if status == "UNHOSTED_REPO_CODE_ONLY":
                 repo_cnt += 1
                 if a["mglennp_code"][1:2] != "D":
                     new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="D")
-                    patch_agent_in_supabase(a["agent_id"], {
-                        "mglennp_code": new_code,
-                        "mglennp_u64": u64,
-                        "mglennp_u64_hex": u64_hex,
-                    })
+                    patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex})
                 continue
 
-            # Candidate live agent -> Knock on its HTTP door and measure real latency
-            ok, measured_ms = probe_live_agent_endpoint(a.get("endpoint", ""))
+            ok, ms = probe_live_agent_endpoint(a.get("endpoint", ""))
             if ok:
                 probed_ok += 1
-                if measured_ms < fastest_ms:
-                    fastest_ms = measured_ms
-                l_grade = latency_ms_to_grade(measured_ms)
-                g_grade = "A" if a["mglennp_code"][1:2] == "A" else "B"
-                new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee=g_grade, latency=l_grade)
-                patch_agent_in_supabase(a["agent_id"], {
-                    "mglennp_code": new_code,
-                    "mglennp_u64": u64,
-                    "mglennp_u64_hex": u64_hex,
-                    "avg_latency_ms": measured_ms,
-                })
+                fastest = min(fastest, ms)
+                new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="A" if a["mglennp_code"][1:2]=="A" else "B", latency=latency_ms_to_grade(ms))
+                patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "avg_latency_ms": ms})
             else:
                 unreachable_cnt += 1
                 new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="E", latency="E")
-                patch_agent_in_supabase(a["agent_id"], {
-                    "mglennp_code": new_code,
-                    "mglennp_u64": u64,
-                    "mglennp_u64_hex": u64_hex,
-                    "avg_latency_ms": measured_ms,
-                })
+                patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "avg_latency_ms": ms})
 
         return {
             "command_understood": "LIVE_HTTP_HEARTBEAT_AUDIT",
-            "verified_live_http": probed_ok,
-            "unreachable_endpoints": unreachable_cnt,
-            "dormant_code_repos": repo_cnt,
-            "slashed_scammers": slashed_cnt,
-            "voice_briefing": (
-                f"Live HTTP heartbeat audit complete. Knocked on every door: {probed_ok} agents answered live "
-                f"(fastest in {fastest_ms} milliseconds) and had their real Latency grades updated in Supabase. "
-                f"{unreachable_cnt} were unreachable, {repo_cnt} are dormant GitHub code repos, and {slashed_cnt} scammer stays blocked."
-            ),
+            "voice_briefing": f"Audit complete. {probed_ok} answered live. {unreachable_cnt} unreachable, {repo_cnt} dormant repos.",
         }
 
-    # 5. LIST VERIFIED LIVE AGENTS
-    if any(w in cmd for w in ("list", "who is live", "top agents", "show live")):
+    if any(w in cmd for w in ("list", "who is live", "top agents")):
         phonebook = fetch_phonebook_from_supabase()
         live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
-        names = ", ".join(f"{a['name']} ({a['mglennp_code']}, {a['avg_latency_ms']}ms)" for a in live_only[:4])
-        return {
-            "command_understood": "LIST_LIVE_AGENTS",
-            "live_count": len(live_only),
-            "voice_briefing": f"You have {len(live_only)} legit live agents ready for dispatch. Top nodes are: {names}.",
-        }
+        names = ", ".join(f"{a['name']}" for a in live_only[:4])
+        return {"command_understood": "LIST_LIVE_AGENTS", "voice_briefing": f"You have {len(live_only)} live agents ready. Top nodes are: {names}."}
 
-    # 6. CRAWL & SYNC REGISTRY
     if any(w in cmd for w in ("crawl", "refresh", "update registry", "scan")):
         phonebook = crawl_public_agent_phonebook()
-        supabase_request(
-            "radial_agent_phonebook?on_conflict=agent_id",
-            method="POST",
-            payload=phonebook,
-            prefer="resolution=merge-duplicates,return=minimal",
-        )
-        live_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT")
-        repo_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "UNHOSTED_REPO_CODE_ONLY")
-        return {
-            "command_understood": "CRAWL_AND_LEGITIMACY_AUDIT",
-            "voice_briefing": (
-                f"Crawl complete. Synced {len(phonebook)} total entries to Virginia Supabase: "
-                f"{live_cnt} are live callable agents, and {repo_cnt} are unhosted GitHub repos."
-            ),
-        }
+        supabase_request("radial_agent_phonebook?on_conflict=agent_id", method="POST", payload=phonebook, prefer="resolution=merge-duplicates,return=minimal")
+        return {"command_understood": "CRAWL_AND_LEGITIMACY_AUDIT", "voice_briefing": f"Crawl complete. Synced {len(phonebook)} total entries to Supabase."}
 
-    # 7. MATCHMAKE / DISPATCH LIVE AGENT (+ LOGS $0.0001 TOLL TO LEDGER)
     if any(w in cmd for w in ("find", "match", "hire", "need")):
         phonebook = fetch_phonebook_from_supabase()
         live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
@@ -420,59 +255,89 @@ def handle_voice_operator_command(command_text):
         if res["matches"]:
             top = res["matches"][0]
             log_handshake_to_ledger(command_text, coupler, top)
-            ledger = fetch_ledger_from_supabase()
-            total_fees = round(len(ledger) * HANDSHAKE_FEE_USD, 4)
+            total_fees = round(len(fetch_ledger_from_supabase()) * HANDSHAKE_FEE_USD, 4)
             return {
                 "command_understood": "VOICE_MATCHMAKE_LIVE_ONLY",
-                "matched_agent": top,
-                "accrued_toll_usd": total_fees,
-                "voice_briefing": (
-                    f"Matched legit live agent {top['name']} with code {top['mglennp_code']} "
-                    f"in {res['local_smell_test_time_ms']} milliseconds. "
-                    f"Logged $0.0001 toll; your ledger tab is now ${total_fees:.4f}."
-                ),
+                "voice_briefing": f"Matched {top['name']}. Logged toll; your tab is now ${total_fees:.4f}.",
             }
-        return {
-            "command_understood": "VOICE_MATCHMAKE_LIVE_ONLY",
-            "voice_briefing": "No live callable agents matched that request.",
-        }
+        return {"command_understood": "VOICE_MATCHMAKE_LIVE_ONLY", "voice_briefing": "No agents matched."}
 
-    # 8. DEFAULT: ROAD ROLL-CALL / STATUS BRIEFING
     return get_public_status_roll_call()
+
+
+LANDING_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MglennP | An honest approach</title>
+<style>
+  body { background:#0b0f19; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:40px 20px; line-height:1.6; }
+  .container { max-width:600px; margin:0 auto; text-align:center; }
+  h1 { color:#38bdf8; font-size:2.5rem; margin-bottom:5px; }
+  .slogan { color:#94a3b8; font-size:1.2rem; font-style:italic; margin-bottom:30px; }
+  .card { background:#111827; border:1px solid #1f2937; border-radius:12px; padding:24px; text-align:left; margin-bottom:20px; }
+  h2 { color:#e2e8f0; font-size:1.3rem; margin-top:0; border-bottom:1px solid #334155; padding-bottom:10px; }
+  ul { padding-left:20px; color:#cbd5e1; }
+  li { margin-bottom: 8px; }
+  .footer { margin-top:40px; font-size:0.9rem; color:#64748b; }
+  a { color:#38bdf8; text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <h1>MglennP</h1>
+    <div class="slogan">"An honest approach"</div>
+    
+    <div class="card">
+      <h2>Autonomous Switchboard Infrastructure</h2>
+      <p>MglennP operates a high-speed API switchboard and clearinghouse for autonomous AI agents. We provide secure, gated matchmaking and legitimacy auditing using the MGLE-NNP 64-bit standard.</p>
+    </div>
+
+    <div class="card">
+      <h2>Transparent Metered Pricing</h2>
+      <ul>
+        <li><strong>API Matchmaking:</strong> $0.0001 USD per successful handshake.</li>
+        <li><strong>Billing Cycle:</strong> Metered threshold billing (invoiced upon reaching $5.00) via Stripe.</li>
+        <li><strong>No hidden fees or middleman markups.</strong></li>
+      </ul>
+    </div>
+
+    <div class="footer">
+      Operated by Michael G. Pearson.<br>
+      For API access or support, contact: <a href="mailto:support@mpearson.us">support@mpearson.us</a>
+    </div>
+  </div>
+</body>
+</html>
+"""
 
 
 COCKPIT_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MglennP Switchboard — Gated Road Cockpit</title>
 <style>
   body { background:#0b0f19; color:#f8fafc; font-family:system-ui,sans-serif; margin:0; padding:16px; text-align:center; }
   h1 { font-size:1.3rem; color:#38bdf8; margin:4px 0; }
   .sub { font-size:0.85rem; color:#94a3b8; margin-bottom:12px; }
-  .keybar { max-width:420px; margin:0 auto 14px; display:flex; justify-content:space-between; align-items:center;
-            background:#111827; border:1px solid #334155; border-radius:12px; padding:8px 12px; }
+  .keybar { max-width:420px; margin:0 auto 14px; display:flex; justify-content:space-between; align-items:center; background:#111827; border:1px solid #334155; border-radius:12px; padding:8px 12px; }
   #keyStatus { font-size:0.9rem; font-weight:600; color:#4ade80; }
   #keyBtn { background:#334155; color:#f8fafc; border:none; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
-  #micBtn { width:100%; max-width:420px; height:150px; border-radius:24px; border:3px solid #38bdf8;
-            background:#0284c7; color:#fff; font-size:1.5rem; font-weight:700; cursor:pointer; margin-bottom:16px; }
+  #micBtn { width:100%; max-width:420px; height:150px; border-radius:24px; border:3px solid #38bdf8; background:#0284c7; color:#fff; font-size:1.5rem; font-weight:700; cursor:pointer; margin-bottom:16px; }
   #micBtn.listening { background:#dc2626; border-color:#f87171; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:420px; margin:0 auto 16px; }
-  .qbtn { padding:16px 8px; border-radius:14px; border:1px solid #334155; background:#1e293b; color:#e2e8f0;
-          font-size:1rem; font-weight:600; cursor:pointer; }
+  .qbtn { padding:16px 8px; border-radius:14px; border:1px solid #334155; background:#1e293b; color:#e2e8f0; font-size:1rem; font-weight:600; cursor:pointer; }
   .qbtn.wide { grid-column: span 2; background:#0f172a; border-color:#0284c7; color:#38bdf8; }
-  #replyBox { max-width:420px; margin:0 auto; padding:16px; border-radius:14px; background:#111827;
-              border:1px solid #1f2937; text-align:left; font-size:1.05rem; line-height:1.45; }
+  #replyBox { max-width:420px; margin:0 auto; padding:16px; border-radius:14px; background:#111827; border:1px solid #1f2937; text-align:left; font-size:1.05rem; line-height:1.45; }
 </style>
 </head>
 <body>
   <h1>MglennP Switchboard Cockpit</h1>
   <div class="sub">US-East4 (Northern Virginia) • Gated Pixel Control</div>
-  <div class="keybar">
-    <span id="keyStatus">🔒 Checking Key...</span>
-    <button id="keyBtn" onclick="setOperatorKey()">🔑 Set Operator Key</button>
-  </div>
+  <div class="keybar"><span id="keyStatus">🔒 Checking Key...</span><button id="keyBtn" onclick="setOperatorKey()">🔑 Set Operator Key</button></div>
   <button id="micBtn" onclick="startVoice()">🎙️ TAP & SPEAK COMMAND</button>
   <div class="grid">
     <button class="qbtn" onclick="sendCmd('status report')">📊 Roll Call</button>
@@ -483,72 +348,11 @@ COCKPIT_HTML = """<!DOCTYPE html>
   </div>
   <div id="replyBox">Tap the blue microphone button or any quick action above. Responses will be spoken out loud.</div>
 <script>
-function updateKeyBadge() {
-  const k = localStorage.getItem('mglennp_operator_key');
-  const el = document.getElementById('keyStatus');
-  if (k) {
-    el.innerText = '🔒 Operator Key Saved';
-    el.style.color = '#4ade80';
-  } else {
-    el.innerText = '⚠️ Key Not Set';
-    el.style.color = '#facc15';
-  }
-}
-function setOperatorKey() {
-  const current = localStorage.getItem('mglennp_operator_key') || '';
-  const entered = prompt('Enter your MglennP OPERATOR_KEY (saved locally on this Pixel):', current);
-  if (entered !== null) {
-    localStorage.setItem('mglennp_operator_key', entered.trim());
-    updateKeyBadge();
-  }
-}
+function updateKeyBadge() { const k = localStorage.getItem('mglennp_operator_key'); const el = document.getElementById('keyStatus'); if(k) { el.innerText = '🔒 Operator Key Saved'; el.style.color = '#4ade80'; } else { el.innerText = '⚠️ Key Not Set'; el.style.color = '#facc15'; } }
+function setOperatorKey() { const current = localStorage.getItem('mglennp_operator_key') || ''; const entered = prompt('Enter your MglennP OPERATOR_KEY (saved locally on this Pixel):', current); if (entered !== null) { localStorage.setItem('mglennp_operator_key', entered.trim()); updateKeyBadge(); } }
 updateKeyBadge();
-
-async function sendCmd(text) {
-  const box = document.getElementById('replyBox');
-  const opKey = localStorage.getItem('mglennp_operator_key') || '';
-  box.innerText = 'Heard: "' + text + '" ... contacting Virginia switchboard...';
-  try {
-    const res = await fetch('/v1/operator', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Operator-Key': opKey
-      },
-      body: JSON.stringify({voice_command: text})
-    });
-    const data = await res.json();
-    const msg = data.voice_briefing || data.error || JSON.stringify(data);
-    box.innerText = msg;
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(msg));
-    }
-    if (res.status === 401) {
-      setOperatorKey();
-    }
-  } catch (e) {
-    box.innerText = 'Error: ' + e;
-  }
-}
-function startVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    const typed = prompt('Voice recognition not supported in this browser tab. Type command:');
-    if (typed) sendCmd(typed);
-    return;
-  }
-  const btn = document.getElementById('micBtn');
-  const rec = new SR();
-  rec.lang = 'en-US';
-  rec.onstart = () => { btn.classList.add('listening'); btn.innerText = '🔴 LISTENING... SPEAK NOW'; };
-  rec.onend = () => { btn.classList.remove('listening'); btn.innerText = '🎙️ TAP & SPEAK COMMAND'; };
-  rec.onresult = (e) => {
-    const transcript = e.results[0][0].transcript;
-    sendCmd(transcript);
-  };
-  rec.start();
-}
+async function sendCmd(text) { const box = document.getElementById('replyBox'); const opKey = localStorage.getItem('mglennp_operator_key') || ''; box.innerText = 'Heard: "' + text + '" ... contacting Virginia switchboard...'; try { const res = await fetch('/v1/operator', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Operator-Key': opKey }, body: JSON.stringify({voice_command: text}) }); const data = await res.json(); const msg = data.voice_briefing || data.error || JSON.stringify(data); box.innerText = msg; if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(msg)); } if (res.status === 401) setOperatorKey(); } catch (e) { box.innerText = 'Error: ' + e; } }
+function startVoice() { const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { const typed = prompt('Voice recognition not supported. Type command:'); if (typed) sendCmd(typed); return; } const btn = document.getElementById('micBtn'); const rec = new SR(); rec.lang = 'en-US'; rec.onstart = () => { btn.classList.add('listening'); btn.innerText = '🔴 LISTENING...'; }; rec.onend = () => { btn.classList.remove('listening'); btn.innerText = '🎙️ TAP & SPEAK COMMAND'; }; rec.onresult = (e) => { sendCmd(e.results[0][0].transcript); }; rec.start(); }
 </script>
 </body>
 </html>
@@ -577,7 +381,9 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path in ("/", "/v1/health"):
+        if parsed.path == "/":
+            self._send_html(200, LANDING_HTML)
+        elif parsed.path == "/v1/health":
             try:
                 report = get_public_status_roll_call()
                 self._send_json(200, report)
@@ -589,14 +395,10 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
             qs = urllib.parse.parse_qs(parsed.query)
             ok, reason = check_operator_gate(self.headers, query_params=qs)
             if not ok:
-                self._send_json(401, {
-                    "error": reason,
-                    "voice_briefing": "Access denied. Valid operator key required.",
-                })
+                self._send_json(401, {"error": reason, "voice_briefing": "Access denied."})
                 return
             try:
-                cmd_text = qs.get("cmd", ["status report"])[0]
-                report = handle_voice_operator_command(cmd_text)
+                report = handle_voice_operator_command(qs.get("cmd", ["status report"])[0])
                 self._send_json(200, report)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
@@ -605,20 +407,15 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        raw_body = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
-        data = json.loads(raw_body) if raw_body else {}
+        data = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
 
         if self.path == "/v1/operator":
             ok, reason = check_operator_gate(self.headers, body_data=data)
             if not ok:
-                self._send_json(401, {
-                    "error": reason,
-                    "voice_briefing": "Access denied. Valid operator key required.",
-                })
+                self._send_json(401, {"error": reason, "voice_briefing": "Access denied."})
                 return
             try:
-                cmd_text = data.get("voice_command", "status report")
-                report = handle_voice_operator_command(cmd_text)
+                report = handle_voice_operator_command(data.get("voice_command", "status report"))
                 self._send_json(200, report)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
@@ -626,27 +423,20 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         elif self.path == "/v1/crawl":
             ok, reason = check_operator_gate(self.headers, body_data=data)
             if not ok:
-                self._send_json(401, {
-                    "error": reason,
-                    "voice_briefing": "Access denied. Valid operator key required.",
-                })
+                self._send_json(401, {"error": reason, "voice_briefing": "Access denied."})
                 return
             try:
-                report = handle_voice_operator_command("crawl and refresh")
-                self._send_json(200, report)
+                self._send_json(200, handle_voice_operator_command("crawl and refresh"))
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
 
         elif self.path == "/v1/matchmake":
-            intent = data.get("intent", "general helper")
-            coupler = data.get("coupler", "****-Z**")
+            intent, coupler = data.get("intent", "general helper"), data.get("coupler", "****-Z**")
             try:
-                phonebook = fetch_phonebook_from_supabase()
-                live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
+                live_only = [a for a in fetch_phonebook_from_supabase() if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
                 result = radial_mglennp_matchmake(intent, live_only, required_pattern=coupler)
                 if result["matches"]:
-                    top = result["matches"][0]
-                    log_handshake_to_ledger(intent, coupler, top)
+                    log_handshake_to_ledger(intent, coupler, result["matches"][0])
                 self._send_json(200, result)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
@@ -654,44 +444,9 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Endpoint not found"})
 
 
-def run_self_test(port):
-    op_key = load_operator_key()
-    server = ThreadingHTTPServer(("127.0.0.1", port), SwitchboardHandler)
-    t = threading.Thread(target=server.serve_forever, daemon=True)
-    t.start()
-    print("======================================================================")
-    print(" MGLENNP SWITCHBOARD v1.3 — LIVE HTTP PROBE & TOLL LEDGER SELF-TEST")
-    print("======================================================================")
-
-    for prompt in [
-        "Audit the phone book",
-        "Find me a legit live SQL validator agent",
-        "Check toll tab",
-    ]:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{port}/v1/operator",
-            data=json.dumps({"voice_command": prompt}).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "X-Operator-Key": op_key,
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-            print(f"\n • Command: \"{prompt}\"")
-            print(f"   -> Briefing: \"{out['voice_briefing']}\"")
-
-    print("\n======================================================================")
-    server.shutdown()
-
-
 if __name__ == "__main__":
     ensure_local_env()
     load_operator_key()
     port = int(os.environ.get("PORT", 8080))
-    if "--self-test" in sys.argv:
-        run_self_test(port)
-    else:
-        print(f"MglennP Gated Switchboard API v1.3 listening on port {port}...")
-        ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+    print(f"MglennP Gated Switchboard API v1.4 listening on port {port}...")
+    ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
