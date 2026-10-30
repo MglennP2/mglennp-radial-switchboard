@@ -1,14 +1,17 @@
 ﻿#!/usr/bin/env python3
 r"""
-MGLENNP STANDALONE SWITCHBOARD — V1.5 (BLUEPRINT & CYCLOIDAL GEAR LANDING PAGE, LIVE PROBE, TOLL LEDGER)
+MGLENNP STANDALONE SWITCHBOARD — V1.6 (BLUEPRINT UI, QUARANTINE LOCK, AI BEACONS & PULL TELEMETRY)
 Endpoints:
- - GET  /                -> Public MglennP Blueprint Landing Page (Stripe Compliance & MGLE-NNP Spec)
- - GET  /v1/health       -> Public read-only switchboard status & live Supabase agent count
- - GET  /cockpit         -> Hands-free mobile voice cockpit for Pixel (stores Operator Key locally)
- - GET  /v1/operator     -> [GATED: X-Operator-Key] Query via ?cmd=...
- - POST /v1/operator     -> [GATED: X-Operator-Key] Voice Command & Control
- - POST /v1/matchmake    -> 0.05ms 64-Bit MGLE-NNP matchmaking + $0.0001 ledger log
- - POST /v1/crawl        -> [GATED: X-Operator-Key] Refreshes public MCP registry
+ - GET  /                      -> Public MglennP Blueprint Landing Page & Front-Door API Spec
+ - GET  /llms.txt              -> Plain-text AI instruction beacon for LLM web crawlers
+ - GET  /openapi.json          -> OpenAPI 3.1.0 schema for automatic tool wiring
+ - GET  /.well-known/mcp.json  -> MCP Switchboard Discovery Transponder
+ - GET  /v1/health             -> Public read-only switchboard status, agent counts & data pull telemetry
+ - GET  /cockpit               -> Hands-free mobile voice cockpit for Pixel (stores Operator Key locally)
+ - GET  /v1/operator           -> [GATED: X-Operator-Key] Query via ?cmd=...
+ - POST /v1/operator           -> [GATED: X-Operator-Key] Voice Command & Control
+ - POST /v1/matchmake          -> <0.4ms 64-Bit MGLE-NNP matchmaking + $0.0001 ledger & telemetry log
+ - POST /v1/crawl              -> [GATED: X-Operator-Key] Governed batch refresh of public MCP registry
 """
 
 import os
@@ -67,7 +70,7 @@ def check_operator_gate(headers, query_params=None, body_data=None):
 
 
 def fetch_phonebook_from_supabase():
-    rows = supabase_request("radial_agent_phonebook?select=*", method="GET", prefer="return=representation")
+    rows = supabase_request("radial_agent_phonebook?select=*&limit=5000", method="GET", prefer="return=representation")
     for r in rows:
         r["radial_bitmask"] = int(r["radial_bitmask"])
         r["mglennp_u64"] = int(r["mglennp_u64"])
@@ -77,12 +80,12 @@ def fetch_phonebook_from_supabase():
 
 
 def fetch_ledger_from_supabase():
-    return supabase_request("handshake_ledger?select=*", method="GET", prefer="return=representation")
+    return supabase_request("handshake_ledger?select=*&limit=5000", method="GET", prefer="return=representation")
 
 
-def log_handshake_to_ledger(intent, coupler, matched_agent, rail="STRIPE_METERED_USD"):
+def log_handshake_to_ledger(intent, coupler, matched_agent, rail="EXTERNAL_AGENT_MATCH"):
     return supabase_request("handshake_ledger", method="POST", payload=[{
-        "caller_intent": intent,
+        "caller_intent": intent[:240],
         "required_coupler": coupler,
         "matched_agent_id": matched_agent["agent_id"],
         "mglennp_code_snapshot": matched_agent["mglennp_code"],
@@ -92,6 +95,27 @@ def log_handshake_to_ledger(intent, coupler, matched_agent, rail="STRIPE_METERED
         "switchboard_fee_usd": HANDSHAKE_FEE_USD,
         "settlement_rail": rail,
     }])
+
+
+def log_discovery_pull_async(beacon_path, user_agent):
+    """Logs a $0.00 telemetry entry when external AI crawlers or agents pull /llms.txt, /openapi.json, or /.well-known/mcp.json."""
+    ua_short = (user_agent or "unknown-agent").strip()[:140]
+    def _worker():
+        try:
+            supabase_request("handshake_ledger", method="POST", payload=[{
+                "caller_intent": f"BEACON_PULL:{beacon_path} [{ua_short}]",
+                "required_coupler": "BEACON",
+                "matched_agent_id": "mcp://mglennp-switchboard-beacon",
+                "mglennp_code_snapshot": "AAAB-ZES",
+                "hop_audit_status": "BEACON_DISCOVERY_READ",
+                "response_latency_ms": 1,
+                "outcome_success": True,
+                "switchboard_fee_usd": 0.0,
+                "settlement_rail": "BEACON_DISCOVERY_PULL",
+            }])
+        except Exception:
+            pass
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def patch_agent_in_supabase(agent_id, fields):
@@ -104,10 +128,13 @@ def classify_agent_legitimacy(agent):
     endpoint = (agent.get("endpoint") or "").strip().lower()
     weight = float(agent.get("synaptic_weight", 0.0))
     bitmask = int(agent.get("radial_bitmask", 0))
+    guarantee_grade = code[1:2]
 
-    if code.startswith("FF") or code[1:2] == "F" or weight <= 0.05:
+    if code.startswith("FF") or guarantee_grade == "F" or weight <= 0.05:
         return "SLASHED_OR_FAILED"
-    if not endpoint or "github.com" in endpoint or "gitlab.com" in endpoint or endpoint.endswith(".git") or code[1:2] == "D" or bitmask == 0:
+    if guarantee_grade == "E":
+        return "QUARANTINED_DEAD_ENDPOINT"
+    if not endpoint or "github.com" in endpoint or "gitlab.com" in endpoint or endpoint.endswith(".git") or guarantee_grade == "D" or bitmask == 0:
         return "UNHOSTED_REPO_CODE_ONLY"
     return "LIVE_CALLABLE_AGENT"
 
@@ -138,7 +165,7 @@ def probe_live_agent_endpoint(endpoint):
     if not ep.startswith("http://") and not ep.startswith("https://"): return False, 9999
 
     t0 = time.perf_counter()
-    req = urllib.request.Request(ep, headers={"User-Agent": "MglennP-Switchboard-Auditor/1.5"}, method="GET")
+    req = urllib.request.Request(ep, headers={"User-Agent": "MglennP-Switchboard-Auditor/1.6"}, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=2.5) as resp:
             return (200 <= resp.status < 500), max(1, int((time.perf_counter() - t0) * 1000))
@@ -148,13 +175,34 @@ def probe_live_agent_endpoint(endpoint):
         return False, max(1, int((time.perf_counter() - t0) * 1000))
 
 
+def summarize_traffic_telemetry(ledger):
+    external_matches = sum(1 for r in ledger if r.get("settlement_rail") == "EXTERNAL_AGENT_MATCH")
+    beacon_pulls = sum(1 for r in ledger if r.get("settlement_rail") == "BEACON_DISCOVERY_PULL")
+    paid_handshakes = [r for r in ledger if float(r.get("switchboard_fee_usd", 0.0)) > 0]
+    total_fees = round(sum(float(r.get("switchboard_fee_usd", 0.0)) for r in paid_handshakes), 4)
+    recent_intents = [
+        r.get("caller_intent", "")
+        for r in reversed(ledger)
+        if r.get("settlement_rail") in ("EXTERNAL_AGENT_MATCH", "BEACON_DISCOVERY_PULL")
+    ][:5]
+    return {
+        "total_paid_handshakes": len(paid_handshakes),
+        "external_agent_match_pulls": external_matches,
+        "ai_beacon_discovery_pulls": beacon_pulls,
+        "total_external_data_pulls": external_matches + beacon_pulls,
+        "accrued_toll_usd": total_fees,
+        "recent_external_activity": recent_intents,
+    }
+
+
 def get_public_status_roll_call():
     phonebook = fetch_phonebook_from_supabase()
     ledger = fetch_ledger_from_supabase()
     live_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT")
+    quarantined_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "QUARANTINED_DEAD_ENDPOINT")
     repo_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "UNHOSTED_REPO_CODE_ONLY")
     slashed_cnt = sum(1 for a in phonebook if classify_agent_legitimacy(a) == "SLASHED_OR_FAILED")
-    total_fees = round(len(ledger) * HANDSHAKE_FEE_USD, 4)
+    telemetry = summarize_traffic_telemetry(ledger)
 
     return {
         "command_understood": "ROAD_STATUS_ROLL_CALL",
@@ -162,16 +210,23 @@ def get_public_status_roll_call():
         "stats": {
             "total_indexed": len(phonebook),
             "legit_live_agents": live_cnt,
+            "quarantined_dead_endpoints": quarantined_cnt,
             "unhosted_github_repos": repo_cnt,
             "slashed_scammers": slashed_cnt,
-            "total_handshakes_logged": len(ledger),
-            "accrued_toll_usd": total_fees,
+            "total_handshakes_logged": telemetry["total_paid_handshakes"],
+            "external_agent_match_pulls": telemetry["external_agent_match_pulls"],
+            "ai_beacon_discovery_pulls": telemetry["ai_beacon_discovery_pulls"],
+            "total_external_data_pulls": telemetry["total_external_data_pulls"],
+            "accrued_toll_usd": telemetry["accrued_toll_usd"],
             "next_settlement_threshold_usd": SETTLEMENT_THRESHOLD_USD,
+            "recent_external_activity": telemetry["recent_external_activity"],
         },
         "voice_briefing": (
-            f"Switchboard is healthy and gated. Out of {len(phonebook)} indexed entries, "
-            f"{live_cnt} are verified live agents, {repo_cnt} are unhosted repos, "
-            f"and {slashed_cnt} is blocked. Ledger tab is ${total_fees:.4f}."
+            f"Switchboard has {len(phonebook)} graded agents: "
+            f"{live_cnt} live callable, {quarantined_cnt} quarantined dead, and {repo_cnt} repos. "
+            f"External data pulls: {telemetry['total_external_data_pulls']} total "
+            f"({telemetry['external_agent_match_pulls']} live match queries and {telemetry['ai_beacon_discovery_pulls']} beacon reads). "
+            f"Ledger tab is ${telemetry['accrued_toll_usd']:.4f}."
         ),
     }
 
@@ -179,15 +234,32 @@ def get_public_status_roll_call():
 def handle_voice_operator_command(command_text):
     cmd = command_text.strip().lower()
 
+    if any(w in cmd for w in ("traffic", "pull", "pulls", "usage", "who is pulling", "telemetry")):
+        ledger = fetch_ledger_from_supabase()
+        t = summarize_traffic_telemetry(ledger)
+        return {
+            "command_understood": "DATA_PULL_TELEMETRY",
+            "telemetry": t,
+            "voice_briefing": (
+                f"Traffic report: {t['total_external_data_pulls']} external data pulls recorded. "
+                f"{t['external_agent_match_pulls']} were live agent matchmake queries and "
+                f"{t['ai_beacon_discovery_pulls']} were AI crawler beacon reads. "
+                f"Total billable handshakes: {t['total_paid_handshakes']} (${t['accrued_toll_usd']:.4f})."
+            ),
+        }
+
     if any(w in cmd for w in ("toll", "payment", "revenue", "ledger", "balance")):
         ledger = fetch_ledger_from_supabase()
-        count = len(ledger)
-        accrued = round(count * HANDSHAKE_FEE_USD, 4)
+        t = summarize_traffic_telemetry(ledger)
         return {
             "command_understood": "TOLL_LEDGER_SUMMARY",
-            "total_handshakes": count,
-            "accrued_toll_usd": accrued,
-            "voice_briefing": f"Tollbooth ledger has {count} verified handshakes totaling ${accrued:.4f} accrued.",
+            "total_handshakes": t["total_paid_handshakes"],
+            "external_agent_match_pulls": t["external_agent_match_pulls"],
+            "accrued_toll_usd": t["accrued_toll_usd"],
+            "voice_briefing": (
+                f"Tollbooth ledger has {t['total_paid_handshakes']} billable handshakes totaling ${t['accrued_toll_usd']:.4f}, "
+                f"including {t['external_agent_match_pulls']} external agent match pulls."
+            ),
         }
 
     if any(w in cmd for w in ("slash", "block", "ban")):
@@ -208,32 +280,29 @@ def handle_voice_operator_command(command_text):
 
     if any(w in cmd for w in ("audit", "probe", "legit", "verify")):
         phonebook = fetch_phonebook_from_supabase()
-        probed_ok, unreachable_cnt, repo_cnt, slashed_cnt, fastest = 0, 0, 0, 0, 9999
-        for a in phonebook:
-            status = classify_agent_legitimacy(a)
-            if status == "SLASHED_OR_FAILED":
-                slashed_cnt += 1; continue
-            if status == "UNHOSTED_REPO_CODE_ONLY":
-                repo_cnt += 1
-                if a["mglennp_code"][1:2] != "D":
-                    new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="D")
-                    patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex})
-                continue
-
+        probed_ok, unreachable_cnt, restored_cnt = 0, 0, 0
+        check_list = [a for a in phonebook if classify_agent_legitimacy(a) in ("LIVE_CALLABLE_AGENT", "QUARANTINED_DEAD_ENDPOINT")][:40]
+        for a in check_list:
+            was_quarantined = (a["mglennp_code"][1:2] == "E")
             ok, ms = probe_live_agent_endpoint(a.get("endpoint", ""))
             if ok:
                 probed_ok += 1
-                fastest = min(fastest, ms)
-                new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="A" if a["mglennp_code"][1:2]=="A" else "B", latency=latency_ms_to_grade(ms))
-                patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "avg_latency_ms": ms})
+                if was_quarantined:
+                    restored_cnt += 1
+                new_code, u64, u64_hex = mutate_mglennp_code(
+                    a["mglennp_code"],
+                    guarantee="A" if a["mglennp_code"][1:2] == "A" else "B",
+                    latency=latency_ms_to_grade(ms),
+                )
+                patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "avg_latency_ms": ms, "synaptic_weight": 0.92})
             else:
                 unreachable_cnt += 1
                 new_code, u64, u64_hex = mutate_mglennp_code(a["mglennp_code"], guarantee="E", latency="E")
-                patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "avg_latency_ms": ms})
+                patch_agent_in_supabase(a["agent_id"], {"mglennp_code": new_code, "mglennp_u64": u64, "mglennp_u64_hex": u64_hex, "avg_latency_ms": ms, "synaptic_weight": 0.25})
 
         return {
             "command_understood": "LIVE_HTTP_HEARTBEAT_AUDIT",
-            "voice_briefing": f"Audit complete. {probed_ok} answered live. {unreachable_cnt} unreachable, {repo_cnt} dormant repos.",
+            "voice_briefing": f"Audit cycle complete on {len(check_list)} endpoints. {probed_ok} answered live, {restored_cnt} recovered from quarantine, and {unreachable_cnt} locked in Grade E quarantine.",
         }
 
     if any(w in cmd for w in ("list", "who is live", "top agents")):
@@ -245,7 +314,7 @@ def handle_voice_operator_command(command_text):
     if any(w in cmd for w in ("crawl", "refresh", "update registry", "scan")):
         phonebook = crawl_public_agent_phonebook()
         supabase_request("radial_agent_phonebook?on_conflict=agent_id", method="POST", payload=phonebook, prefer="resolution=merge-duplicates,return=minimal")
-        return {"command_understood": "CRAWL_AND_LEGITIMACY_AUDIT", "voice_briefing": f"Crawl complete. Synced {len(phonebook)} total entries to Supabase."}
+        return {"command_understood": "CRAWL_AND_LEGITIMACY_AUDIT", "voice_briefing": f"Batch crawl complete. Graded and synced {len(phonebook)} entries to Supabase."}
 
     if any(w in cmd for w in ("find", "match", "hire", "need")):
         phonebook = fetch_phonebook_from_supabase()
@@ -254,15 +323,110 @@ def handle_voice_operator_command(command_text):
         res = radial_mglennp_matchmake(command_text, live_only, required_pattern=coupler)
         if res["matches"]:
             top = res["matches"][0]
-            log_handshake_to_ledger(command_text, coupler, top)
-            total_fees = round(len(fetch_ledger_from_supabase()) * HANDSHAKE_FEE_USD, 4)
+            log_handshake_to_ledger(command_text, coupler, top, rail="OPERATOR_COCKPIT_TEST")
+            t = summarize_traffic_telemetry(fetch_ledger_from_supabase())
             return {
                 "command_understood": "VOICE_MATCHMAKE_LIVE_ONLY",
-                "voice_briefing": f"Matched {top['name']}. Logged toll; your tab is now ${total_fees:.4f}.",
+                "voice_briefing": f"Matched {top['name']}. Logged operator test; your tab is now ${t['accrued_toll_usd']:.4f}.",
             }
         return {"command_understood": "VOICE_MATCHMAKE_LIVE_ONLY", "voice_briefing": "No agents matched."}
 
     return get_public_status_roll_call()
+
+
+LLMS_TXT = """# Radial Switchboard (MglennP 64-Bit Agent Matchmaker)
+> High-speed (<0.4ms) 64-bit bitwise clearinghouse and live heartbeat auditor for autonomous AI agents and MCP servers.
+
+## How AI Agents Query the Switchboard Directory
+Send an HTTP POST request to https://radialswitchboard.com/v1/matchmake with a JSON body:
+
+{
+  "intent": "describe the tool or domain needed (e.g., sql database validation, github coding, finance, weather, web search)",
+  "coupler": "****-Z**"
+}
+
+### Coupler Wildcard Guide (MGLE-NNP 7-Char Pattern)
+- Default fast self-executing live agent: "*B**-ZES" or "****-Z**"
+- Byte 1 (M): Merit (A-C active, F slashed)
+- Byte 2 (G): Guarantee (A/B verified live HTTP endpoint, D dormant GitHub repo, E quarantined dead endpoint)
+- Byte 3 (L): Latency (A <=120ms, B <=300ms, C <=700ms)
+- Byte 4 (E): Economy (A Free, B <=$0.001)
+- Byte 5 (N): Node Honesty (Z Zero-hop self-execution, hop_ttl=0 enforced)
+
+## Live Status & OpenAPI Spec
+- Health & Live Counts: GET https://radialswitchboard.com/v1/health
+- OpenAPI 3.1 Schema: GET https://radialswitchboard.com/openapi.json
+- MCP Discovery: GET https://radialswitchboard.com/.well-known/mcp.json
+"""
+
+
+OPENAPI_SPEC = {
+    "openapi": "3.1.0",
+    "info": {
+        "title": "MglennP Radial Switchboard API",
+        "version": "1.6.0",
+        "description": "Sub-millisecond 64-bit MGLE-NNP autonomous agent matchmaker and live MCP endpoint auditor. Filters out dead endpoints (Grade E) and unhosted GitHub repositories (Grade D).",
+        "contact": {"name": "MglennP", "email": "support@radialswitchboard.com"},
+    },
+    "servers": [{"url": "https://radialswitchboard.com"}],
+    "paths": {
+        "/v1/matchmake": {
+            "post": {
+                "operationId": "matchmakeLiveAgent",
+                "summary": "Match a live, heartbeat-verified agent using 64-bit MGLE-NNP bitwise filtering",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["intent"],
+                                "properties": {
+                                    "intent": {
+                                        "type": "string",
+                                        "description": "Task or domain keywords (finance, crypto, coding, github, search, web, database, sql, weather, maps, construction, cad, commerce, payments, media).",
+                                    },
+                                    "coupler": {
+                                        "type": "string",
+                                        "default": "****-Z**",
+                                        "description": "7-character MGLE-NNP wildcard pattern (e.g., '****-Z**' for any live self-executing agent).",
+                                    },
+                                },
+                            }
+                        }
+                    },
+                },
+                "responses": {
+                    "200": {
+                        "description": "Top ranked live callable agents with endpoints and MGLE-NNP 64-bit stamps."
+                    }
+                },
+            }
+        },
+        "/v1/health": {
+            "get": {
+                "operationId": "getSwitchboardHealth",
+                "summary": "Get live counts of audited, callable, quarantined, and repo-only agents plus data pull telemetry",
+                "responses": {"200": {"description": "Current switchboard health roll call"}},
+            }
+        },
+    },
+}
+
+
+MCP_WELL_KNOWN = {
+    "mcpVersion": "2025-03-26",
+    "name": "io.radialswitchboard/mglennp-switchboard",
+    "title": "MglennP Radial Switchboard (64-Bit Agent Matchmaker)",
+    "description": "Sub-0.4ms 64-bit MGLE-NNP agent directory and live HTTP heartbeat auditor. Prunes dead endpoints and unhosted GitHub repos.",
+    "homepage": "https://radialswitchboard.com",
+    "endpoints": {
+        "matchmake": "https://radialswitchboard.com/v1/matchmake",
+        "health": "https://radialswitchboard.com/v1/health",
+        "openapi": "https://radialswitchboard.com/openapi.json",
+        "llms_txt": "https://radialswitchboard.com/llms.txt",
+    },
+}
 
 
 LANDING_HTML = """<!DOCTYPE html>
@@ -271,6 +435,7 @@ LANDING_HTML = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Radial Switchboard | MglennP — An honest approach</title>
+<link rel="alternate" type="text/plain" href="/llms.txt" title="LLM Instructions">
 <style>
   :root {
     --bg-blueprint: #0a111a;
@@ -360,18 +525,18 @@ LANDING_HTML = """<!DOCTYPE html>
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 14px;
+    gap: 12px;
     margin-top: 14px;
     padding-top: 14px;
     border-top: 1px dashed rgba(212, 175, 55, 0.3);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     color: var(--steel);
   }
   .gauge-pill {
     background: #091019;
     border: 1px solid #263548;
-    padding: 6px 12px;
+    padding: 6px 11px;
     border-radius: 6px;
   }
   .gauge-pill strong { color: var(--brass); }
@@ -412,6 +577,17 @@ LANDING_HTML = """<!DOCTYPE html>
     padding: 2px 7px;
     border-radius: 4px;
     font-size: 0.92rem;
+  }
+  pre.code-block {
+    background: #080d14;
+    border: 1px solid #243447;
+    border-radius: 6px;
+    padding: 14px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.86rem;
+    color: #e2e8f0;
+    margin: 12px 0;
   }
   .spec-table {
     width: 100%;
@@ -472,19 +648,16 @@ LANDING_HTML = """<!DOCTYPE html>
 <body>
   <div class="container">
     <div class="header-plate">
-      <div class="stamp-tag">MglennP Mechanical Dispatch • Spec Rev 1.5</div>
+      <div class="stamp-tag">MglennP Mechanical Dispatch • Spec Rev 1.6</div>
       <h1>RADIAL SWITCHBOARD</h1>
       <div class="slogan">"An honest approach to solving everyday challenges."</div>
 
-      <!-- Counter-Rotating Cycloidal Gear & 64-Bit Compass SVG -->
       <div class="gear-stage" aria-label="Counter-Rotating Cycloidal Bitmask Alignment">
         <svg viewBox="0 0 200 200" width="190" height="190">
-          <!-- Blueprint Crosshairs -->
           <line x1="100" y1="6" x2="100" y2="194" stroke="#243447" stroke-width="1" stroke-dasharray="3,3"/>
           <line x1="6" y1="100" x2="194" y2="100" stroke="#243447" stroke-width="1" stroke-dasharray="3,3"/>
           <circle cx="100" cy="100" r="88" fill="none" stroke="#243447" stroke-width="1"/>
 
-          <!-- Outer Counter-Rotating Stator Ring (9-Station CCW) -->
           <g class="ring-ccw">
             <circle cx="100" cy="100" r="76" fill="none" stroke="#d4af37" stroke-width="2" stroke-opacity="0.75"/>
             <circle cx="100" cy="100" r="68" fill="none" stroke="#94a3b8" stroke-width="1" stroke-dasharray="8,6"/>
@@ -501,7 +674,6 @@ LANDING_HTML = """<!DOCTYPE html>
             </g>
           </g>
 
-          <!-- Inner Clockwise Cycloidal Rotor (8-Byte CW) -->
           <g class="ring-cw">
             <circle cx="100" cy="100" r="46" fill="#0d1622" stroke="#38bdf8" stroke-width="2"/>
             <line x1="100" y1="54" x2="100" y2="146" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.4"/>
@@ -518,7 +690,6 @@ LANDING_HTML = """<!DOCTYPE html>
             </g>
           </g>
 
-          <!-- Center Drive Shaft & Bitmask Lock -->
           <g class="core-pulse">
             <circle cx="100" cy="100" r="18" fill="#131f2e" stroke="#d4af37" stroke-width="2.5"/>
             <circle cx="100" cy="100" r="5" fill="#22c55e"/>
@@ -532,16 +703,34 @@ LANDING_HTML = """<!DOCTYPE html>
 
       <div class="gauge-bar">
         <div class="gauge-pill"><span class="dot-live"></span>NODE: <strong>US-EAST4 (VA)</strong></div>
-        <div class="gauge-pill">MATCH SPEED: <strong>&lt;0.4ms BITWISE</strong></div>
         <div class="gauge-pill">LIVE CALLABLE: <strong id="liveCount">--</strong></div>
+        <div class="gauge-pill">QUARANTINED: <strong id="quarantinedCount">--</strong></div>
+        <div class="gauge-pill">DATA PULLS: <strong id="pullsCount">--</strong></div>
         <div class="gauge-pill">TOLL: <strong>$0.0001 / HANDSHAKE</strong></div>
       </div>
     </div>
 
     <div class="card">
+      <h2>Front-Door Dispatch API (Direct Agent Access)</h2>
+      <p>
+        Autonomous agents and MCP routers can query the live Virginia phonebook directly via <span class="code-badge">POST https://radialswitchboard.com/v1/matchmake</span>. Dead endpoints (<span class="code-badge">Grade E</span>) and unhosted GitHub repositories (<span class="code-badge">Grade D</span>) are automatically quarantined out of live dispatch.
+      </p>
+      <pre class="code-block">POST https://radialswitchboard.com/v1/matchmake
+Content-Type: application/json
+
+{
+  "intent": "fast github coding and sql database validation",
+  "coupler": "****-Z**"
+}</pre>
+      <p style="font-size:0.88rem; color:var(--steel); margin-bottom:0;">
+        Machine Discovery Beacons: <a href="/llms.txt">/llms.txt</a> • <a href="/openapi.json">/openapi.json</a> • <a href="/.well-known/mcp.json">/.well-known/mcp.json</a> • <a href="/v1/health">/v1/health</a>
+      </p>
+    </div>
+
+    <div class="card">
       <h2>Why This Exists: Solving the 55,000-Token Bloat Tax</h2>
       <p>
-        Today, when an AI agent needs to hire a tool or verify a service, it has to download and read massive JSON schemas across dozens of MCP servers—often burning <strong>55,000+ context tokens ($0.05 to $0.15 in electricity and compute)</strong> before doing a single ounce of real work. Worse, over 80% of public registry listings are dead GitHub repositories or middleman wrappers that subcontract the job and mark up the bill.
+        Today, when an AI agent needs to hire a tool or verify a service, it has to download and read massive JSON schemas across dozens of MCP servers—often burning <strong>55,000+ context tokens ($0.05 to $0.15 in electricity and compute)</strong> before doing a single ounce of real work. Worse, the majority of public registry listings are dead GitHub repositories or unreachable hobby servers.
       </p>
       <div class="comparison-grid">
         <div class="comp-box">
@@ -553,7 +742,7 @@ LANDING_HTML = """<!DOCTYPE html>
         <div class="comp-box" style="border-color:var(--brass-dim);">
           <h3 style="color:var(--brass);">⚙️ The MglennP Mechanical Bitmask</h3>
           <p style="font-size:0.88rem; margin:0;">
-            Compresses an agent's entire capability, latency grade, and honesty pledge into a single <strong>64-bit integer</strong>. Prunes 99% of dead ends using a single CPU bitwise instruction in <strong>under 0.4 milliseconds</strong>.
+            Compresses an agent's entire capability, latency grade, and honesty pledge into a single <strong>64-bit integer</strong>. Prunes dead ends using a single CPU bitwise instruction in <strong>under 0.4 milliseconds</strong>.
           </p>
         </div>
       </div>
@@ -586,7 +775,7 @@ LANDING_HTML = """<!DOCTYPE html>
           <tr>
             <td class="mono">Byte 2</td>
             <td class="mono">G (Guarantee)</td>
-            <td><strong>Live Heartbeat Grade:</strong> <span class="code-badge">A/B</span> = Answered live HTTP probe; <span class="code-badge">D</span> = Unhosted GitHub repo (filtered out of live dispatch).</td>
+            <td><strong>Live Heartbeat Grade:</strong> <span class="code-badge">A/B</span> = Answered live HTTP probe; <span class="code-badge">D</span> = Dormant GitHub repo; <span class="code-badge">E</span> = Quarantined dead endpoint (held until next recheck cycle).</td>
           </tr>
           <tr>
             <td class="mono">Byte 3</td>
@@ -621,14 +810,14 @@ LANDING_HTML = """<!DOCTYPE html>
       <h2>Honest, Transparent Metered Pricing</h2>
       <ul>
         <li><strong>Flat Switchboard Toll:</strong> <span class="code-badge">$0.0001 USD</span> per successful live agent handshake (100 verified dispatches for a single penny).</li>
-        <li><strong>Zero Charge on Empty Queries:</strong> Unhosted GitHub repositories and unreachable nodes are filtered out before dispatch—you never pay for a dead line.</li>
+        <li><strong>Zero Charge on Empty Queries:</strong> Dormant GitHub repositories (<span class="code-badge">Grade D</span>) and quarantined dead nodes (<span class="code-badge">Grade E</span>) are filtered out before dispatch—you never pay for a dead line.</li>
         <li><strong>Threshold Settlement:</strong> Usage accrues transparently on the switchboard ledger and bills via <strong>Stripe</strong> upon reaching the <strong>$5.00 USD</strong> settlement threshold.</li>
       </ul>
     </div>
 
     <div class="footer">
-      Engineered &amp; Operated by <strong>Michael G. Pearson</strong> • MglennP Software Ventures (Charlotte Court House, Virginia)<br>
-      For API keys, billing inquiries, or operator support: <a href="mailto:support@radialswitchboard.com">support@radialswitchboard.com</a>
+      Engineered &amp; Operated by <strong>MglennP</strong> • Located in Virginia, USA<br>
+      For billing inquiries or operator support: <a href="mailto:support@radialswitchboard.com">support@radialswitchboard.com</a>
     </div>
   </div>
 
@@ -639,6 +828,10 @@ LANDING_HTML = """<!DOCTYPE html>
         if (d && d.stats) {
           document.getElementById('liveCount').innerText =
             d.stats.legit_live_agents + ' / ' + d.stats.total_indexed + ' AUDITED';
+          document.getElementById('quarantinedCount').innerText =
+            (d.stats.quarantined_dead_endpoints || 0) + ' HELD';
+          document.getElementById('pullsCount').innerText =
+            (d.stats.total_external_data_pulls || 0) + ' EXTERNAL (' + (d.stats.total_handshakes_logged || 0) + ' LOGGED)';
         }
       })
       .catch(() => {});
@@ -676,8 +869,8 @@ COCKPIT_HTML = """<!DOCTYPE html>
   <button id="micBtn" onclick="startVoice()">🎙️ TAP & SPEAK COMMAND</button>
   <div class="grid">
     <button class="qbtn" onclick="sendCmd('status report')">📊 Roll Call</button>
-    <button class="qbtn" onclick="sendCmd('audit the phone book')">🛡️ Live HTTP Audit</button>
-    <button class="qbtn" onclick="sendCmd('list live agents')">⚡ List Live</button>
+    <button class="qbtn" onclick="sendCmd('traffic report')">📡 Traffic Pulls</button>
+    <button class="qbtn" onclick="sendCmd('audit the phone book')">🛡️ Recheck Quarantine</button>
     <button class="qbtn" onclick="sendCmd('check toll tab')">💰 Toll Tab</button>
     <button class="qbtn wide" onclick="sendCmd('Find me a legit live SQL validator agent')">🤝 Test Dispatch (+ $0.0001 Toll)</button>
   </div>
@@ -699,6 +892,16 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_text(self, status_code, text_body):
+        body = text_body.encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -716,8 +919,18 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
+        ua = self.headers.get("User-Agent", "")
         if parsed.path == "/":
             self._send_html(200, LANDING_HTML)
+        elif parsed.path == "/llms.txt":
+            log_discovery_pull_async("/llms.txt", ua)
+            self._send_text(200, LLMS_TXT)
+        elif parsed.path == "/openapi.json":
+            log_discovery_pull_async("/openapi.json", ua)
+            self._send_json(200, OPENAPI_SPEC)
+        elif parsed.path == "/.well-known/mcp.json":
+            log_discovery_pull_async("/.well-known/mcp.json", ua)
+            self._send_json(200, MCP_WELL_KNOWN)
         elif parsed.path == "/v1/health":
             try:
                 report = get_public_status_roll_call()
@@ -771,7 +984,7 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
                 live_only = [a for a in fetch_phonebook_from_supabase() if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
                 result = radial_mglennp_matchmake(intent, live_only, required_pattern=coupler)
                 if result["matches"]:
-                    log_handshake_to_ledger(intent, coupler, result["matches"][0])
+                    log_handshake_to_ledger(intent, coupler, result["matches"][0], rail="EXTERNAL_AGENT_MATCH")
                 self._send_json(200, result)
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
@@ -783,5 +996,5 @@ if __name__ == "__main__":
     ensure_local_env()
     load_operator_key()
     port = int(os.environ.get("PORT", 8080))
-    print(f"MglennP Gated Switchboard API v1.5 listening on port {port}...")
+    print(f"MglennP Gated Switchboard API v1.6 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
