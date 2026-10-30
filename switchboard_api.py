@@ -354,26 +354,47 @@ def handle_voice_operator_command(command_text):
     return get_public_status_roll_call()
 
 
-LLMS_TXT = """# Radial Switchboard (MglennP 64-Bit Agent Matchmaker)
-> High-speed (<0.4ms) 64-bit bitwise clearinghouse and live heartbeat auditor for autonomous AI agents and MCP servers.
+LLMS_TXT = """# Radial Switchboard (MglennP 64-Bit Agent Matchmaker — Spec Rev 1.9)
+> Sub-millisecond (<0.4ms) 64-bit bitwise matchmaker and live heartbeat auditor for autonomous AI agents and MCP servers. Operated by MglennP in Virginia, USA.
 
-## How AI Agents Query the Switchboard Directory
+## Stage 1: The 64-Bit Glance & Complementary Crew Dispatch (POST /v1/matchmake)
 Send an HTTP POST request to https://radialswitchboard.com/v1/matchmake with a JSON body:
 
 {
-  "intent": "describe the tool or domain needed (e.g., sql database validation, github coding, finance, weather, web search)",
-  "coupler": "****-Z**"
+  "intent": "fast github sql validation and deep construction cad finance analysis",
+  "coupler": "****-Z**",
+  "mode": "crew"
 }
 
+- "mode": "single" (default) returns the top 3 verified live callable agents ranked by 64-bit domain resonance and heartbeat latency.
+- "mode": "crew" assembles a 3-Agent Complementary Triad where each agent covers the others' blind spots:
+  1. 1_COMPUTE_EXECUTION (Fast synchronous execution lead, Preference = S)
+  2. 2_DOMAIN_KNOWLEDGE_COMPLEMENT (Targets uncovered domain bits missed by Slot 1, Preference = D)
+  3. 3_INDEPENDENT_VERIFICATION (High-merit independent verification node)
+
 ### Coupler Wildcard Guide (MGLE-NNP 7-Char Pattern)
-- Default fast self-executing live agent: "*B**-ZES" or "****-Z**"
-- Byte 1 (M): Merit (A-C active, F slashed)
+- Default live self-executing pattern: "****-Z**"
+- Byte 1 (M): Merit (A-C active, D demoted, F slashed)
 - Byte 2 (G): Guarantee (A/B verified live HTTP endpoint, D dormant GitHub repo, E quarantined dead endpoint)
-- Byte 3 (L): Latency (A <=120ms, B <=300ms, C <=700ms)
+- Byte 3 (L): Latency (A <=120ms, B <=300ms, C <=700ms, D <=1500ms)
 - Byte 4 (E): Economy (A Free, B <=$0.001)
 - Byte 5 (N): Node Honesty (Z Zero-hop self-execution, hop_ttl=0 enforced)
+- Byte 6 (N): Neighbor Protocol (E HTTPS/MCP JSON-RPC, G gRPC)
+- Byte 7 (P): Preference (S Synchronous speed, D Deep deliberative/domain)
 
-## Live Status & OpenAPI Spec
+## Stage 2: Direct Peer Handoff & Outcome Verification (POST /v1/outcome)
+After connecting directly to a matched agent's endpoint in Stage 2, report execution competence via POST https://radialswitchboard.com/v1/outcome:
+
+{
+  "agent_id": "mcp://ai.qcdatabase/mcp",
+  "outcome_success": true,
+  "measured_ms": 140
+}
+
+- Successful outcomes promote Merit/Latency grades and synaptic weight.
+- Failed outcomes (outcome_success: false) immediately quarantine dead/broken endpoints into Grade E so subsequent callers never waste tokens on them.
+
+## Live Status & Machine Schemas
 - Health & Live Counts: GET https://radialswitchboard.com/v1/health
 - OpenAPI 3.1 Schema: GET https://radialswitchboard.com/openapi.json
 - MCP Discovery: GET https://radialswitchboard.com/.well-known/mcp.json
@@ -384,8 +405,8 @@ OPENAPI_SPEC = {
     "openapi": "3.1.0",
     "info": {
         "title": "MglennP Radial Switchboard API",
-        "version": "1.6.0",
-        "description": "Sub-millisecond 64-bit MGLE-NNP autonomous agent matchmaker and live MCP endpoint auditor. Filters out dead endpoints (Grade E) and unhosted GitHub repositories (Grade D).",
+        "version": "1.9.0",
+        "description": "Sub-millisecond 64-bit MGLE-NNP autonomous agent matchmaker, complementary 3-agent crew assembler, and Stage 2 outcome auditor. Filters out dead endpoints (Grade E) and unhosted GitHub repositories (Grade D).",
         "contact": {"name": "MglennP", "email": "support@radialswitchboard.com"},
     },
     "servers": [{"url": "https://radialswitchboard.com"}],
@@ -393,7 +414,7 @@ OPENAPI_SPEC = {
         "/v1/matchmake": {
             "post": {
                 "operationId": "matchmakeLiveAgent",
-                "summary": "Match a live, heartbeat-verified agent using 64-bit MGLE-NNP bitwise filtering",
+                "summary": "Match a single live agent or assemble a 3-agent complementary crew using 64-bit MGLE-NNP bitwise filtering",
                 "requestBody": {
                     "required": True,
                     "content": {
@@ -411,6 +432,12 @@ OPENAPI_SPEC = {
                                         "default": "****-Z**",
                                         "description": "7-character MGLE-NNP wildcard pattern (e.g., '****-Z**' for any live self-executing agent).",
                                     },
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": ["single", "crew"],
+                                        "default": "single",
+                                        "description": "Use 'single' for top individual matches or 'crew' to assemble a 3-agent complementary triad (Compute + Domain Complement + Verification).",
+                                    },
                                 },
                             }
                         }
@@ -418,7 +445,43 @@ OPENAPI_SPEC = {
                 },
                 "responses": {
                     "200": {
-                        "description": "Top ranked live callable agents with endpoints and MGLE-NNP 64-bit stamps."
+                        "description": "Top ranked live callable agents or 3-agent complementary crew with Stage 2 direct handoff endpoints and MGLE-NNP 64-bit stamps."
+                    }
+                },
+            }
+        },
+        "/v1/outcome": {
+            "post": {
+                "operationId": "reportStage2Outcome",
+                "summary": "Submit a Stage 2 post-handshake execution receipt to dynamically update an agent's 64-bit MGLE-NNP merit, latency grade, or quarantine status",
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["agent_id", "outcome_success"],
+                                "properties": {
+                                    "agent_id": {
+                                        "type": "string",
+                                        "description": "The matched agent_id (e.g., 'mcp://ai.qcdatabase/mcp').",
+                                    },
+                                    "outcome_success": {
+                                        "type": "boolean",
+                                        "description": "True if the Stage 2 peer-to-peer execution succeeded; False to demote and quarantine a failing endpoint into Grade E.",
+                                    },
+                                    "measured_ms": {
+                                        "type": "integer",
+                                        "description": "Optional measured Stage 2 execution latency in milliseconds.",
+                                    },
+                                },
+                            }
+                        }
+                    },
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated 64-bit MGLE-NNP code, hex stamp, synaptic weight, and quarantine status."
                     }
                 },
             }
@@ -1167,6 +1230,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v1.6 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
 
 
 
