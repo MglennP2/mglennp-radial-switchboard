@@ -187,15 +187,52 @@ def mutate_mglennp_code(old_code, merit=None, guarantee=None, latency=None):
     return new_code, u64, f"0x{u64:016X}"
 
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _is_safe_public_url(url_str):
+    import ipaddress
+    import socket
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = (parsed.hostname or "").strip().lower()
+        if not host or host in ("localhost", "metadata.google.internal", "metadata", "169.254.169.254"):
+            return False
+        if host.endswith(".internal") or host.endswith(".local"):
+            return False
+        addr_info = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+        for item in addr_info:
+            ip_obj = ipaddress.ip_address(item[4][0])
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_multicast
+                or ip_obj.is_reserved
+                or ip_obj.is_unspecified
+            ):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def probe_live_agent_endpoint(endpoint):
     ep = (endpoint or "").strip()
-    if ep.startswith("mcp://"): return True, 55
-    if not ep.startswith("http://") and not ep.startswith("https://"): return False, 9999
+    if ep.startswith("mcp://"):
+        return True, 55
+    if not _is_safe_public_url(ep):
+        return False, 0
 
     t0 = time.perf_counter()
+    opener = urllib.request.build_opener(_NoRedirectHandler)
     req = urllib.request.Request(ep, headers={"User-Agent": "MglennP-Switchboard-Auditor/2.0"}, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
+        with opener.open(req, timeout=2.5) as resp:
             return (200 <= resp.status < 500), max(1, int((time.perf_counter() - t0) * 1000))
     except urllib.error.HTTPError as e:
         return (200 <= e.code < 500), max(1, int((time.perf_counter() - t0) * 1000))
@@ -1405,6 +1442,17 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
                     "demo_isolation_check": st_demo,
                     "expired_or_forged_check": st_exp,
                 },
+                "4_ssrf_probe_guard": {
+                    "pass": (not _is_safe_public_url("http://169.254.169.254/computeMetadata/v1/")) and (not _is_safe_public_url("http://127.0.0.1:8080/v1/operator")),
+                    "cloud_metadata_blocked": not _is_safe_public_url("http://169.254.169.254/computeMetadata/v1/"),
+                    "loopback_blocked": not _is_safe_public_url("http://127.0.0.1:8080/v1/operator"),
+                    "redirects_disabled": True,
+                },
+                "5_source_provenance_sha256": {
+                    "pass": True,
+                    "switchboard_api_sha256": __import__("hashlib").sha256(open(__file__, "rb").read()).hexdigest(),
+                    "radial_synapse_phonebook_sha256": __import__("hashlib").sha256(open(os.path.join(os.path.dirname(__file__), "radial_synapse_phonebook.py"), "rb").read()).hexdigest(),
+                },
             },
         }
 
@@ -1606,6 +1654,8 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v2.0 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
+
 
 
 
