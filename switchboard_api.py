@@ -424,30 +424,27 @@ def handle_voice_operator_command(command_text):
     return get_public_status_roll_call()
 
 
-LLMS_TXT = """# Radial Switchboard (MglennP 64-Bit Agent Matchmaker — Spec Rev 2.0)
-> Sub-millisecond (<0.4ms) 64-bit bitwise matchmaker, 3-agent complementary crew assembler, and live JSON-RPC heartbeat auditor for autonomous AI agents and MCP servers. Operated by MglennP ("An honest approach") in Virginia, USA.
+LLMS_TXT = """# Radial Switchboard (MglennP 64-Bit Agent Matchmaker -- Spec Rev 2.0.0)
+> Sub-millisecond 64-bit bitwise matchmaker, 3-agent provider-independent crew assembler, HMAC-verified Stage 2 outcome auditor, and reproducible P50/P95/P99 benchmark engine for autonomous AI agents and MCP servers. Operated by MglennP ("An honest approach") in Virginia, USA.
 
-## 1. Security, Access & Rate-Limit Model (Spec Rev 2.0)
-- Public Read & Matchmaking (No API Key Required): GET /v1/health, GET /v1/benchmark, GET /v1/matchmake, and POST /v1/matchmake are open to autonomous agents and developers (rate limit: 120 req/min per IP).
-- Cryptographic Stage 2 Outcome Verification (execution_ticket): Every match returned by /v1/matchmake includes an HMAC-SHA256 signed execution_ticket (v2.<timestamp>.<task_hash>.<signature>).
-- Anti-Sabotage Quarantine Guard (POST /v1/outcome): Unverified callers can NEVER permanently quarantine another developer's agent. When outcome_success: false is reported, the switchboard executes an independent server-side HTTP heartbeat probe to corroborate whether the endpoint is truly unreachable before assigning Grade E.
+## 1. Security, Access & Rate-Limit Model (Spec Rev 2.0.0)
+- Public Read, Audit & Matchmaking (No API Key Required): GET /v1/health, GET /v1/benchmark, GET /v1/audit, GET /v1/matchmake, and POST /v1/matchmake are open to all autonomous agents and developers (rate limit: 120 req/min per IP).
+- Cryptographic Stage 2 Outcome Verification (execution_ticket): Live matches (demo: false) return a single-use HMAC-SHA256 signed execution_ticket (v2.<timestamp>.<nonce>.<signature>) bound to (prefix|agent_id|timestamp|nonce) with 24h expiry and replay protection. Demo queries (demo: true) return non-mutating demo_v2.<timestamp>.<nonce>.<signature> tickets that can never alter production reputation.
+- Anti-Sabotage Quarantine Guard & SSRF Protection (POST /v1/outcome): Unverified callers can NEVER quarantine another developer's agent. When outcome_success: false is reported, the switchboard executes an SSRF-hardened server-side HTTP heartbeat probe (blocking private/loopback/cloud-metadata IPs and redirects) to corroborate whether the endpoint is truly unreachable before assigning Grade E.
 - Operator Mutation Gate (X-Operator-Key): Administrative directory crawls (POST /v1/crawl) and operator commands (/v1/operator) require the X-Operator-Key header (401 Unauthorized if missing/invalid).
 
-## 2. Stage 1: 3-Step Matchmaking & Complementary Crew Dispatch (/v1/matchmake)
+## 2. Stage 1: 3-Step Matchmaking & Provider-Independent Crew Dispatch (/v1/matchmake)
 - POST Request: POST https://radialswitchboard.com/v1/matchmake
-- Read-Only GET Request (For AI Crawlers & Inspectors): GET https://radialswitchboard.com/v1/matchmake?intent=SQL+database+optimization+and+GitHub+validation&coupler=****-Z**&mode=crew&demo=true
-
-{
-  "intent": "SQL database optimization and GitHub validation",
-  "coupler": "****-Z**",
-  "mode": "crew",
-  "demo": false
-}
+- Read-Only Reproducible Crew GET Links (demo=true):
+  - Demo (SQL + GitHub, 3 domain bits -> 33.3% single / 66.7% crew): https://radialswitchboard.com/v1/matchmake?intent=SQL+database+optimization+and+GitHub+validation&coupler=****-Z**&mode=crew&demo=true
+  - Triad 1 (Construction + CAD + Payments, 2 domain bits -> 50.0% single / 100.0% crew): https://radialswitchboard.com/v1/matchmake?intent=Residential+construction+3D+CAD+modeling+and+Stripe+payment+invoicing&coupler=****-Z**&mode=crew&demo=true
+  - Triad 2 (Crypto + SQL + GitHub, 4 domain bits -> 25.0% single / 75.0% crew): https://radialswitchboard.com/v1/matchmake?intent=Crypto+defi+token+analytics+with+SQL+postgres+database+and+GitHub+repo+audit&coupler=****-Z**&mode=crew&demo=true
+  - Triad 3 (Web Search + Python + Finance, 4 domain bits -> 25.0% single / 75.0% crew): https://radialswitchboard.com/v1/matchmake?intent=Web+search+RAG+indexing+with+Python+code+sandbox+and+SEC+equity+finance&coupler=****-Z**&mode=crew&demo=true
 
 ### 3-Step Hybrid Matchmaking Pipeline
-1. Step 1 — Mechanical 64-Bit Filtering (step1_bitmask_filter_ms): Single-pass bitwise prune on 32-bit capability mask + 64-bit MGLE-NNP coupler, excluding Grade D (unhosted repos) and Grade E (quarantined dead endpoints).
-2. Step 2 — Competency & Confidence-Weighted Ranking (step2_competency_rank_ms): Ranks surviving candidates by domain bit overlap, confidence-weighted synaptic_weight, Merit grade (M), and measured Virginia RTT latency (avg_latency_ms).
-3. Step 3 — Provider-Independent Crew Assembly (mode: "crew"): Assembles a 3-agent complementary triad (1_COMPUTE_EXECUTION, 2_DOMAIN_KNOWLEDGE_COMPLEMENT, 3_INDEPENDENT_VERIFICATION) across distinct provider namespaces so no provider ever self-verifies its own work, computing a composite crew_quality_score (0-100).
+1. Step 1 -- Mechanical 64-Bit Filtering (step1_bitmask_filter_ms): Single-pass bitwise prune on 32-bit capability mask + 64-bit MGLE-NNP coupler, excluding Grade D (unhosted repos) and Grade E (quarantined dead endpoints).
+2. Step 2 -- Competency & Confidence-Weighted Ranking (step2_competency_rank_ms): Ranks surviving candidates by domain bit overlap, confidence-weighted synaptic_weight, Merit grade (M), and measured Virginia RTT latency (avg_latency_ms).
+3. Step 3 -- Provider-Independent Crew Assembly (mode: "crew"): Assembles a 3-agent complementary triad (1_COMPUTE_EXECUTION, 2_DOMAIN_KNOWLEDGE_COMPLEMENT, 3_INDEPENDENT_VERIFICATION) across 3 distinct provider namespaces so no provider ever self-verifies its own work.
 
 ## 3. Stage 2: Verified Outcome Receipts (POST /v1/outcome)
 Submit the signed execution_ticket issued during Stage 1 matchmaking:
@@ -459,13 +456,13 @@ Submit the signed execution_ticket issued during Stage 1 matchmaking:
   "execution_ticket": "v2.1793480000.a1b2c3d4e5f60718.9f8e7d6c5b4a3f2e1d0c9b8a"
 }
 
-## 4. Reproducible Benchmarks & Reconciled Health Telemetry
-- Reconciled Health Roll Call (1,803 Indexed = 1,803 Reconciled, 0 Unaccounted): GET https://radialswitchboard.com/v1/health
-- Live P50 / P95 / P99 Benchmark Suite (100, 1,000, 1,531, and 10,000 Agents vs JSON Scan): GET https://radialswitchboard.com/v1/benchmark
-- OpenAPI 3.1.0 Contract (Spec Rev 2.0): GET https://radialswitchboard.com/openapi.json
-- MCP Discovery Manifest: GET https://radialswitchboard.com/.well-known/mcp.json
+## 4. Reproducible Benchmarks, Read-Only Security Audit & Health Telemetry
+- Read-Only Autonomous Security & Invariant Audit (5 Live Invariants + Source SHA-256): GET https://radialswitchboard.com/v1/audit
+- Reconciled Health Roll Call (1,803 Indexed == 1,531 Live + 96 Quarantined + 173 Repos + 3 Canaries, 0 Unaccounted): GET https://radialswitchboard.com/v1/health
+- Live P50 / P95 / P99 Benchmark Suite (with Raw 40-Sample Arrays): GET https://radialswitchboard.com/v1/benchmark
+- OpenAPI 3.1.0 Contract (Spec Rev 2.0.0): GET https://radialswitchboard.com/openapi.json
+- MCP Discovery Manifest (Spec Rev 2.0.0): GET https://radialswitchboard.com/.well-known/mcp.json
 """
-
 
 OPENAPI_SPEC = {
     "openapi": "3.1.0",
