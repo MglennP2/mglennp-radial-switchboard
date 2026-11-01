@@ -238,15 +238,19 @@ def get_public_status_roll_call():
     return {
         "command_understood": "ROAD_STATUS_ROLL_CALL",
         "security_gate": "PUBLIC_READ_AND_MATCH_OPEN__OPERATOR_MUTATION_KEY_GATED",
+        "spec_revision": "2.0.0",
         "stats": {
             "total_indexed": len(phonebook),
             "legit_live_agents": live_cnt,
+            "live_callable_agents": live_cnt,
             "quarantined_dead_endpoints": quarantined_cnt,
             "unhosted_github_repos": repo_cnt,
+            "unhosted_code_repos": repo_cnt,
             "internal_system_canaries": canary_cnt,
             "slashed_scammers": slashed_cnt,
             "reconciled_sum": reconciled_sum,
             "unaccounted_records": unaccounted_cnt,
+            "reconciliation_invariant": f"{len(phonebook)} == {live_cnt} (live) + {quarantined_cnt} (quarantined) + {repo_cnt} (repos) + {canary_cnt} (canaries) + {slashed_cnt} (slashed)",
             "total_handshakes_logged": telemetry["total_paid_handshakes"],
             "external_agent_match_pulls": telemetry["external_agent_match_pulls"],
             "ai_beacon_discovery_pulls": telemetry["ai_beacon_discovery_pulls"],
@@ -1221,11 +1225,16 @@ function startVoice() { const SR = window.SpeechRecognition || window.webkitSpee
 
 
 class SwitchboardHandler(BaseHTTPRequestHandler):
+    _CONSUMED_TICKETS = set()
+
     def _send_json(self, status_code, payload):
         body = json.dumps(payload, indent=2).encode("utf-8")
         self.send_response(status_code)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("X-Switchboard-Spec-Version", "2.0.0")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1235,6 +1244,9 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         self.send_response(status_code)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("X-Switchboard-Spec-Version", "2.0.0")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1243,6 +1255,8 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         body = html_text.encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("X-Switchboard-Spec-Version", "2.0.0")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1250,23 +1264,24 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def _issue_execution_ticket(self, agent_id, intent):
+    def _issue_execution_ticket(self, agent_id, intent, is_demo=False):
         import hashlib
+        prefix = "demo_v2" if is_demo else "v2"
         secret = (load_operator_key() or "mglennp-radial-switchboard-v2").encode("utf-8")
         ts = int(time.time())
-        task_hash = hashlib.sha256((intent or "").encode("utf-8")).hexdigest()[:16]
-        payload = f"{agent_id}|{ts}|{task_hash}"
+        nonce = hashlib.sha256(f"{time.perf_counter_ns()}|{agent_id}|{intent}".encode("utf-8")).hexdigest()[:16]
+        payload = f"{prefix}|{agent_id}|{ts}|{nonce}"
         sig = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
-        return f"v2.{ts}.{task_hash}.{sig}"
+        return f"{prefix}.{ts}.{nonce}.{sig}"
 
-    def _verify_execution_ticket(self, ticket, agent_id):
+    def _verify_execution_ticket(self, ticket, agent_id, consume=True):
         import hashlib
-        if not ticket or not isinstance(ticket, str) or not ticket.startswith("v2."):
+        if not ticket or not isinstance(ticket, str):
             return False, "MISSING_OR_UNSIGNED_TICKET"
         parts = ticket.split(".")
-        if len(parts) != 4:
+        if len(parts) != 4 or parts[0] not in ("v2", "demo_v2"):
             return False, "MALFORMED_TICKET"
-        _, ts_str, task_hash, sig = parts
+        prefix, ts_str, nonce, sig = parts
         try:
             ts = int(ts_str)
         except Exception:
@@ -1274,25 +1289,34 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         if abs(int(time.time()) - ts) > 86400:
             return False, "EXPIRED_TICKET_24H"
         secret = (load_operator_key() or "mglennp-radial-switchboard-v2").encode("utf-8")
-        payload = f"{agent_id}|{ts}|{task_hash}"
+        payload = f"{prefix}|{agent_id}|{ts}|{nonce}"
         expected = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()[:24]
         if not hmac.compare_digest(sig, expected):
             return False, "INVALID_HMAC_SIGNATURE"
+        if prefix == "demo_v2":
+            return False, "DEMO_TICKET_NON_MUTATING"
+        if sig in SwitchboardHandler._CONSUMED_TICKETS:
+            return False, "REPLAYED_TICKET_REJECTED"
+        if consume:
+            if len(SwitchboardHandler._CONSUMED_TICKETS) > 10000:
+                SwitchboardHandler._CONSUMED_TICKETS.clear()
+            SwitchboardHandler._CONSUMED_TICKETS.add(sig)
         return True, "HMAC_TICKET_VERIFIED"
 
     def _execute_matchmake_pipeline(self, intent, coupler, mode, is_demo):
         phonebook = fetch_phonebook_from_supabase()
         live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
         result = radial_mglennp_matchmake(intent, live_only, required_pattern=coupler, mode=mode)
-        result["spec_revision"] = "2.0"
+        result["spec_revision"] = "2.0.0"
         result["total_indexed_scanned"] = len(phonebook)
         result["live_callable_pool"] = len(live_only)
         result["demo_mode"] = is_demo
         for m in result.get("matches", []):
-            m["execution_ticket"] = self._issue_execution_ticket(m.get("agent_id", ""), intent)
+            m["execution_ticket"] = self._issue_execution_ticket(m.get("agent_id", ""), intent, is_demo=is_demo)
         result["stage2_receipt_contract"] = {
             "endpoint": "POST https://radialswitchboard.com/v1/outcome",
             "required_fields": ["agent_id", "outcome_success", "execution_ticket"],
+            "ticket_security": "HMAC-SHA256 bound to (prefix|agent_id|timestamp|nonce). Single-use replay protected. demo_v2 tickets cannot mutate production state.",
             "anti_sabotage_policy": "Quarantine (Grade E) requires independent server-side HTTP heartbeat corroboration.",
         }
         if result.get("matches") and not is_demo:
@@ -1300,6 +1324,7 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         return result
 
     def _run_live_benchmark_suite(self):
+        import platform
         phonebook = fetch_phonebook_from_supabase()
         live_only = [a for a in phonebook if classify_agent_legitimacy(a) == "LIVE_CALLABLE_AGENT"]
         base_pool = live_only if live_only else phonebook
@@ -1314,31 +1339,73 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
             for _ in range(40):
                 t0 = time.perf_counter()
                 radial_mglennp_matchmake(intent, pool, required_pattern=coupler, mode="single")
-                samples.append((time.perf_counter() - t0) * 1000.0)
-            samples.sort()
+                samples.append(round((time.perf_counter() - t0) * 1000.0, 4))
+            samples_sorted = sorted(samples)
             conv_t0 = time.perf_counter()
             for a in pool:
                 _ = (intent.lower() in json.dumps(a).lower())
             conv_ms = (time.perf_counter() - conv_t0) * 1000.0
-            p50 = round(samples[int(len(samples) * 0.50)], 4)
-            p95 = round(samples[int(len(samples) * 0.95)], 4)
-            p99 = round(samples[min(len(samples) - 1, int(len(samples) * 0.99))], 4)
+            p50 = round(samples_sorted[int(len(samples_sorted) * 0.50)], 4)
+            p95 = round(samples_sorted[int(len(samples_sorted) * 0.95)], 4)
+            p99 = round(samples_sorted[min(len(samples_sorted) - 1, int(len(samples_sorted) * 0.99))], 4)
             tiers[size_label] = {
                 "dataset_size": target_n,
                 "iterations": 40,
                 "p50_ms": p50,
                 "p95_ms": p95,
                 "p99_ms": p99,
-                "mean_ms": round(sum(samples) / len(samples), 4),
+                "mean_ms": round(sum(samples_sorted) / len(samples_sorted), 4),
                 "conventional_json_scan_ms": round(conv_ms, 4),
                 "speedup_vs_json_scan": f"{round(conv_ms / max(p50, 0.001), 1)}x",
+                "raw_samples_ms": samples,
             }
         return {
-            "benchmark_spec": "MglennP 64-Bit MGLE-NNP Reproducible Latency Distribution (Spec Rev 2.0)",
-            "environment": "Google Cloud Run Gen2 (us-east4 Virginia) — Python 3 ThreadingHTTPServer",
+            "benchmark_spec": "MglennP 64-Bit MGLE-NNP Reproducible Latency Distribution (Spec Rev 2.0.0)",
+            "environment": {
+                "runtime": "Google Cloud Run Gen2 (us-east4 Virginia)",
+                "python_version": platform.python_version(),
+                "platform": platform.platform(),
+                "methodology": "40 live in-memory matchmaking iterations per tier vs full JSON serialization scan",
+            },
             "test_intent": intent,
             "test_coupler": coupler,
             "tiers": tiers,
+        }
+
+    def _run_non_mutating_security_audit(self):
+        health = get_public_status_roll_call().get("stats", {})
+        live_t = self._issue_execution_ticket("mcp://ai.justdeploy/mcp", "audit test", is_demo=False)
+        demo_t = self._issue_execution_ticket("mcp://ai.justdeploy/mcp", "audit test", is_demo=True)
+        ok_valid, st_valid = self._verify_execution_ticket(live_t, "mcp://ai.justdeploy/mcp", consume=True)
+        ok_replay, st_replay = self._verify_execution_ticket(live_t, "mcp://ai.justdeploy/mcp", consume=True)
+        ok_cross, st_cross = self._verify_execution_ticket(
+            self._issue_execution_ticket("mcp://ai.justdeploy/mcp", "audit test", is_demo=False),
+            "mcp://wrong-agent/mcp",
+            consume=False,
+        )
+        ok_demo, st_demo = self._verify_execution_ticket(demo_t, "mcp://ai.justdeploy/mcp", consume=False)
+        ok_exp, st_exp = self._verify_execution_ticket("v2.1700000000.deadbeef00000000.forgedsignature000000000", "mcp://ai.justdeploy/mcp", consume=False)
+        return {
+            "audit_spec": "MglennP Radial Switchboard — Read-Only Autonomous Verification Suite (Spec Rev 2.0.0)",
+            "invariants": {
+                "1_inventory_reconciled": {
+                    "pass": health.get("unaccounted_records") == 0 and health.get("total_indexed") == health.get("reconciled_sum"),
+                    "equation": health.get("reconciliation_invariant"),
+                },
+                "2_contract_version_parity": {
+                    "pass": OPENAPI_SPEC["info"]["version"] == "2.0.0" and MCP_WELL_KNOWN["version"] == "2.0.0",
+                    "openapi_version": OPENAPI_SPEC["info"]["version"],
+                    "mcp_manifest_version": MCP_WELL_KNOWN["version"],
+                },
+                "3_ticket_hmac_and_replay_guard": {
+                    "pass": (ok_valid is True) and (ok_replay is False) and (ok_cross is False) and (ok_demo is False) and (ok_exp is False),
+                    "valid_first_use": st_valid,
+                    "second_use_replay_check": st_replay,
+                    "cross_agent_binding_check": st_cross,
+                    "demo_isolation_check": st_demo,
+                    "expired_or_forged_check": st_exp,
+                },
+            },
         }
 
     def do_GET(self):
@@ -1364,6 +1431,11 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/v1/benchmark":
             try:
                 self._send_json(200, self._run_live_benchmark_suite())
+            except Exception as e:
+                self._send_json(500, {"error": str(e)})
+        elif parsed.path == "/v1/audit":
+            try:
+                self._send_json(200, self._run_non_mutating_security_audit())
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
         elif parsed.path == "/v1/matchmake":
@@ -1534,6 +1606,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v2.0 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
+
 
 
 
