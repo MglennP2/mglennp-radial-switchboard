@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 r"""
 MGLENNP STANDALONE SWITCHBOARD — V2.0 (BLUEPRINT UI, QUARANTINE LOCK, AI BEACONS & PULL TELEMETRY)
 Endpoints:
@@ -688,6 +688,7 @@ MCP_WELL_KNOWN = {
         "outcome": "https://radialswitchboard.com/v1/outcome",
         "health": "https://radialswitchboard.com/v1/health",
         "benchmark": "https://radialswitchboard.com/v1/benchmark",
+        "audit": "https://radialswitchboard.com/v1/audit",
         "openapi": "https://radialswitchboard.com/openapi.json",
         "llms_txt": "https://radialswitchboard.com/llms.txt",
     },
