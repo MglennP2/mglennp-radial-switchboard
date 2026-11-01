@@ -666,6 +666,13 @@ OPENAPI_SPEC = {
                 "responses": {"200": {"description": "Reproducible P50/P95/P99 latency distribution report"}},
             }
         },
+        "/v1/audit": {
+            "get": {
+                "operationId": "runNonMutatingSecurityAudit",
+                "summary": "Run read-only autonomous verification of inventory reconciliation, contract parity, HMAC ticket replay/demo isolation, SSRF protection, and source provenance",
+                "responses": {"200": {"description": "Non-mutating security and architectural invariant report"}},
+            }
+        },
     },
 }
 
