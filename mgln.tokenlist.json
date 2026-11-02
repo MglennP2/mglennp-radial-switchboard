@@ -1,0 +1,56 @@
+{
+  "name": "Mogul Network Token List",
+  "timestamp": "2026-03-31T00:00:00.000Z",
+  "version": {
+    "major": 1,
+    "minor": 0,
+    "patch": 0
+  },
+  "tags": {
+    "utility": {
+      "name": "Utility Token",
+      "description": "Tokens used for software execution, API handshakes, and proof-of-work settlement."
+    },
+    "verified": {
+      "name": "Domain Verified",
+      "description": "Tokens with verified domain ownership, 0% tax, and locked liquidity."
+    }
+  },
+  "logoURI": "https://mglennp.com/static/mgln-logo.svg",
+  "keywords": [
+    "mgln",
+    "mogul",
+    "base",
+    "utility",
+    "radial-switchboard",
+    "proof-of-craft"
+  ],
+  "tokens": [
+    {
+      "chainId": 8453,
+      "address": "0xC6bacc57cee87930bE22666A78FBb28718009A16",
+      "name": "Mogul Network",
+      "symbol": "MGLN",
+      "decimals": 18,
+      "logoURI": "https://mglennp.com/static/mgln-logo.svg",
+      "tags": [
+        "utility",
+        "verified"
+      ],
+      "extensions": {
+        "website": "https://mglennp.com",
+        "documentation": "https://mglennp.com/taskmatrix",
+        "description": "Official utility token & Proof-of-Craft work ledger currency for MglennP Autonomous Infrastructure and Radial Switchboard.",
+        "explorer": "https://basescan.org/token/0xC6bacc57cee87930bE22666A78FBb28718009A16",
+        "transferFee": "0%",
+        "buyTax": "0%",
+        "sellTax": "0%",
+        "lpLockStatus": "LOCKED / BURNED",
+        "lpBurnTx": "0x42842e0e0000000000000000000000008f3079dd98f1b171f21e1d4f4575605df6bdde3a00000000000000000000000000000000000000000000000000000000000f2b71",
+        "lpBurnAddress": "0x000000000000000000000000000000000000dEaD",
+        "lpNftId": "6107185",
+        "utility": "370+ notarized $MGLN work blocks + Radial Switchboard handshake credits ($0.0001/tx on Base L2)"
+      }
+    }
+  ]
+}
