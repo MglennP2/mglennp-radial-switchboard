@@ -961,7 +961,7 @@ LANDING_HTML = """<!DOCTYPE html>
   a:hover { text-decoration: underline; }
 </style>
 </head>
-<body>
+<body><div style='background:#0f172a;border-bottom:2px solid #f59e0b;padding:10px 18px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;font-family:sans-serif;font-size:13px;color:#f8fafc;position:sticky;top:0;z-index:9999;'><span><strong style='color:#f59e0b;'>OPEN AGENT DIRECTORY:</strong> 1,803+ Audited Agents &bull; Kindness &amp; Honesty Grading &bull; Creator Appeals &amp; User Comments</span><a href='/directory' style='background:#f59e0b;color:#0f172a;font-weight:800;padding:7px 14px;border-radius:8px;text-decoration:none;'>Explore Audited Agent Directory &rarr;</a></div>
   <div class="container">
     <div class="header-plate">
       <div class="stamp-tag">MglennP Mechanical Dispatch • Spec Rev 2.0</div>
@@ -1655,15 +1655,24 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
 
 
 
-@app.get("/directory", include_in_schema=False)
-async def open_agent_directory_explorer():
-    import os
-    from fastapi.responses import HTMLResponse
-    explorer_path = os.path.join(os.path.dirname(__file__), "static", "radial_agent_directory_explorer.html")
-    if os.path.exists(explorer_path):
-        with open(explorer_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), status_code=200)
-    return HTMLResponse(content="<h1>Directory Explorer Loading...</h1>", status_code=200)
+_orig_do_get = SwitchboardHandler.do_GET
+
+def _directory_aware_do_get(self):
+    path_clean = self.path.split("?", 1)[0].rstrip("/")
+    if path_clean == "/directory":
+        explorer_path = os.path.join(os.path.dirname(__file__), "static", "radial_agent_directory_explorer.html")
+        if os.path.exists(explorer_path):
+            with open(explorer_path, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+    return _orig_do_get(self)
+
+SwitchboardHandler.do_GET = _directory_aware_do_get
 
 
 if __name__ == "__main__":
@@ -1672,7 +1681,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     print(f"MglennP Gated Switchboard API v2.0 listening on port {port}...")
     ThreadingHTTPServer(("0.0.0.0", port), SwitchboardHandler).serve_forever()
-
 
 
 
