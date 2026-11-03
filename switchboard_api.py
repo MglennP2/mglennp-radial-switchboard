@@ -1,4 +1,3 @@
-from fastapi.responses import HTMLResponse
 #!/usr/bin/env python3
 r"""
 MGLENNP STANDALONE SWITCHBOARD — V2.0 (BLUEPRINT UI, QUARANTINE LOCK, AI BEACONS & PULL TELEMETRY)
@@ -1654,6 +1653,19 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Endpoint not found"})
 
 
+
+
+@app.get("/directory", include_in_schema=False)
+async def open_agent_directory_explorer():
+    import os
+    from fastapi.responses import HTMLResponse
+    explorer_path = os.path.join(os.path.dirname(__file__), "static", "radial_agent_directory_explorer.html")
+    if os.path.exists(explorer_path):
+        with open(explorer_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    return HTMLResponse(content="<h1>Directory Explorer Loading...</h1>", status_code=200)
+
+
 if __name__ == "__main__":
     ensure_local_env()
     load_operator_key()
@@ -1674,11 +1686,3 @@ if __name__ == "__main__":
 
 
 
-
-@app.get("/directory", response_class=HTMLResponse, include_in_schema=False)
-async def open_agent_directory_explorer():
-    explorer_path = os.path.join(os.path.dirname(__file__), "static", "radial_agent_directory_explorer.html")
-    if os.path.exists(explorer_path):
-        with open(explorer_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), status_code=200)
-    return HTMLResponse(content="<h1>Directory Explorer Loading...</h1>", status_code=200)
