@@ -961,7 +961,7 @@ LANDING_HTML = """<!DOCTYPE html>
   a:hover { text-decoration: underline; }
 </style>
 </head>
-<body><div style='background:#0f172a;border-bottom:2px solid #f59e0b;padding:10px 18px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;font-family:sans-serif;font-size:13px;color:#f8fafc;position:sticky;top:0;z-index:9999;'><span><strong style='color:#f59e0b;'>OPEN AGENT DIRECTORY:</strong> 1,803+ Audited Agents &bull; Kindness &amp; Honesty Grading &bull; Creator Appeals &amp; User Comments</span><a href='/directory' style='background:#f59e0b;color:#0f172a;font-weight:800;padding:7px 14px;border-radius:8px;text-decoration:none;'>Explore Audited Agent Directory &rarr;</a></div>
+<body><div style='background:#0f172a;border-bottom:2px solid #f59e0b;padding:10px 18px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;font-family:sans-serif;font-size:13px;color:#f8fafc;position:sticky;top:0;z-index:9999;'><span><strong style='color:#f59e0b;'>LIVE AGENT DIRECTORY:</strong> Real-Time GitHub MCP/A2A Crawler + 64-Bit Synapse Phonebook</span><a href='/directory' style='background:#f59e0b;color:#0f172a;font-weight:800;padding:7px 14px;border-radius:8px;text-decoration:none;'>Open Live Audited Agent Directory &rarr;</a></div>
   <div class="container">
     <div class="header-plate">
       <div class="stamp-tag">MglennP Mechanical Dispatch • Spec Rev 2.0</div>
@@ -1655,7 +1655,95 @@ class SwitchboardHandler(BaseHTTPRequestHandler):
 
 
 
+# === LIVE DIRECTORY, REAL GITHUB CRAWLER & COMMENTS ENGINE ===
+import json as _json
+from datetime import datetime as _dt, timezone as _tz
+
+_LIVE_COMMENTS_FILE = os.path.join(os.path.dirname(__file__), "live_directory_comments.json")
+_CRAWL_LATEST_FILE = os.path.join(os.path.dirname(__file__), "global_discovered_agents_latest.json")
+_CRAWL_STATE_FILE = os.path.join(os.path.dirname(__file__), "global_agent_crawl_state.json")
+
+def _get_live_directory_payload():
+    if not os.path.exists(_CRAWL_LATEST_FILE):
+        try:
+            import continuous_global_agent_crawler as _cgc
+            _cgc.run_global_crawler_tick()
+        except Exception as _e:
+            print("Initial crawler tick warning:", _e)
+
+    agents_map = {}
+
+    try:
+        for _k, _v in list(globals().items()):
+            if "PHONEBOOK" in _k.upper() and hasattr(_v, "agents"):
+                _entries = _v.agents
+                if isinstance(_entries, dict):
+                    _entries = list(_entries.values())
+                for _a in (_entries or []):
+                    _aid = str(getattr(_a, "agent_id", "agent"))
+                    agents_map[_aid] = {
+                        "agent_id": _aid,
+                        "agent_name": str(getattr(_a, "name", _aid)),
+                        "domain": "verified-phonebook",
+                        "mglennp_id_hex": f"0x{int(getattr(_a, 'word', 0)):016X}",
+                        "competency_score": round(float(getattr(_a, "competency_score", 0.92)), 2),
+                        "grade": "A",
+                        "source": "Radial Synapse Phonebook (Live)",
+                        "description": "Active agent registered in radial_synapse_phonebook.py for 64-bit matchmaking.",
+                        "honest_note": "Active in live 64-bit Switchboard matchmaking.",
+                        "repo_url": "https://radialswitchboard.com",
+                        "stars": "Active"
+                    }
+    except Exception:
+        pass
+
+    crawl_state = {}
+    if os.path.exists(_CRAWL_STATE_FILE):
+        try:
+            with open(_CRAWL_STATE_FILE, "r", encoding="utf-8") as _f:
+                crawl_state = _json.load(_f)
+        except Exception:
+            pass
+
+    if os.path.exists(_CRAWL_LATEST_FILE):
+        try:
+            with open(_CRAWL_LATEST_FILE, "r", encoding="utf-8") as _f:
+                _crawled = _json.load(_f)
+            for _item in (_crawled.get("agents") or []):
+                _aid = _item.get("agent_id")
+                if _aid:
+                    agents_map[_aid] = {
+                        "agent_id": _aid,
+                        "agent_name": _item.get("agent_name", _aid),
+                        "domain": _item.get("domain", "general"),
+                        "mglennp_id_hex": _item.get("mglennp_id_hex", "0x0"),
+                        "competency_score": _item.get("competency_score", 0.72),
+                        "grade": "D",
+                        "source": "GitHub Live API Crawl",
+                        "description": _item.get("description", ""),
+                        "honest_note": "Real open-source GitHub repository indexed via api.github.com/search/repositories (Grade D: source code repo, ready for live endpoint hosting).",
+                        "repo_url": _item.get("repo_url", ""),
+                        "stars": _item.get("stars", 0)
+                    }
+        except Exception:
+            pass
+
+    comments = {}
+    if os.path.exists(_LIVE_COMMENTS_FILE):
+        try:
+            with open(_LIVE_COMMENTS_FILE, "r", encoding="utf-8") as _f:
+                comments = _json.load(_f)
+        except Exception:
+            pass
+
+    return {
+        "agents": list(agents_map.values()),
+        "comments": comments,
+        "crawl_state": crawl_state
+    }
+
 _orig_do_get = SwitchboardHandler.do_GET
+_orig_do_post = SwitchboardHandler.do_POST
 
 def _directory_aware_do_get(self):
     path_clean = self.path.split("?", 1)[0].rstrip("/")
@@ -1670,9 +1758,64 @@ def _directory_aware_do_get(self):
             self.end_headers()
             self.wfile.write(body)
             return
+    if path_clean == "/v1/directory/live":
+        payload = _json.dumps(_get_live_directory_payload()).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+        return
     return _orig_do_get(self)
 
+def _directory_aware_do_post(self):
+    path_clean = self.path.split("?", 1)[0].rstrip("/")
+    if path_clean == "/v1/directory/crawl":
+        try:
+            import continuous_global_agent_crawler as _cgc
+            res = _cgc.run_global_crawler_tick()
+        except Exception as _e:
+            res = {"error": str(_e)}
+        payload = _json.dumps(res).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+        return
+    if path_clean == "/v1/directory/comment":
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        data = _json.loads(raw)
+        aid = str(data.get("agent_id", "")).strip()
+        author = str(data.get("author", "Visitor")).strip()[:60]
+        text = str(data.get("text", "")).strip()[:500]
+        comments = {}
+        if os.path.exists(_LIVE_COMMENTS_FILE):
+            try:
+                with open(_LIVE_COMMENTS_FILE, "r", encoding="utf-8") as _f:
+                    comments = _json.load(_f)
+            except Exception:
+                pass
+        if aid and text:
+            comments.setdefault(aid, []).append({
+                "author": author,
+                "text": text,
+                "timestamp": _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+            })
+            with open(_LIVE_COMMENTS_FILE, "w", encoding="utf-8") as _f:
+                _json.dump(comments, _f, indent=2)
+        payload = _json.dumps({"ok": True}).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+        return
+    return _orig_do_post(self)
+
 SwitchboardHandler.do_GET = _directory_aware_do_get
+SwitchboardHandler.do_POST = _directory_aware_do_post
 
 
 if __name__ == "__main__":
