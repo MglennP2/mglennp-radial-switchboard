@@ -1,3 +1,4 @@
+from fastapi.responses import HTMLResponse
 #!/usr/bin/env python3
 r"""
 MGLENNP STANDALONE SWITCHBOARD — V2.0 (BLUEPRINT UI, QUARANTINE LOCK, AI BEACONS & PULL TELEMETRY)
@@ -1672,3 +1673,12 @@ if __name__ == "__main__":
 
 
 
+
+
+@app.get("/directory", response_class=HTMLResponse, include_in_schema=False)
+async def open_agent_directory_explorer():
+    explorer_path = os.path.join(os.path.dirname(__file__), "static", "radial_agent_directory_explorer.html")
+    if os.path.exists(explorer_path):
+        with open(explorer_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), status_code=200)
+    return HTMLResponse(content="<h1>Directory Explorer Loading...</h1>", status_code=200)
