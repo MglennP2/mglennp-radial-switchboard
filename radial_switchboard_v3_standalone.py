@@ -15,7 +15,7 @@ import urllib.error, urllib.parse, urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
-SPEC_VERSION = "3.0.3"
+SPEC_VERSION = "3.0.4"
 SCHEMA_NIBBLE = 0x3
 DEFAULT_USDC_TREASURY_ADDRESS = os.environ.get(
     "RADIAL_USDC_TREASURY_ADDRESS", "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd"
