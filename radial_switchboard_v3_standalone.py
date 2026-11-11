@@ -1,65 +1,42 @@
 #!/usr/bin/env python3
-"""
-MGLENNP RADIAL SWITCHBOARD — SPEC REV 3.0.2 (PRODUCTION CUTOVER ENGINE)
-Brand: MglennP — "An honest approach to solving everyday challenges."
-Isolation: 100% Standalone (Zero coupling to Homestead Maintenance, Dream Constructor, TrendDial, or Command Center).
-Base Mainnet USDC Treasury: 0x24b1a09b489c67c3e43f7cd1f3023aef544104fd
-Default Flash Policy: Top-10 Anti-Monoculture Variability (distinct vendor domains + distinct tool-schema hashes).
-"""
-
-
+"""MglennP Radial Switchboard -- Spec Rev 3.2.0 (Bridged Real-Only + Caller Hook Engine) | support@radialswitchboard.com"""
 from __future__ import annotations
 import argparse, concurrent.futures, datetime, hashlib, hmac, http.server
-import json, math, os, random, re, secrets, socketserver, ssl, threading, time
+import json, os, random, re, secrets, socketserver, ssl, threading, time
 import urllib.error, urllib.parse, urllib.request
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 
-SPEC_VERSION = "3.0.5"
+SPEC_VERSION = "3.2.0"
 SCHEMA_NIBBLE = 0x3
-DEFAULT_USDC_TREASURY_ADDRESS = os.environ.get(
-    "RADIAL_USDC_TREASURY_ADDRESS", "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd"
-)
-BASE_MAINNET_CHAIN_ID = "eip155:8453"
-BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-
-
-DEFAULT_FLASH_TOP_K = 10
-MAX_FLASH_TOP_K = 25
-CASH_PASS_PRICE_USDC = "0.01"
-CASH_PASS_CREDITS = 100
-CASH_PASS_TTL_SECONDS = 86400 * 30
-WORK_ASSIGNMENT_SIZE = 4
-WORK_PASS_CREDITS = 20
-WORK_PASS_TTL_SECONDS = 3600
-FREE_DAILY_STARTER_CALLS = 15
-
-
+CONTACT_EMAIL = "support@radialswitchboard.com"
+PUBLIC_GITHUB_REPO = "https://github.com/MglennP2/mglennp-radial-switchboard"
+DEFAULT_USDC_TREASURY_ADDRESS = os.environ.get("RADIAL_USDC_TREASURY_ADDRESS", "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd")
+BASE_MAINNET_CHAIN_ID, BASE_USDC_CONTRACT = "eip155:8453", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+DEFAULT_FLASH_TOP_K, MAX_FLASH_TOP_K = 10, 25
+CASH_PASS_PRICE_USDC, CASH_PASS_CREDITS, CASH_PASS_TTL_SECONDS = "0.01", 100, 86400 * 30
+WORK_ASSIGNMENT_SIZE, WORK_PASS_CREDITS, WORK_PASS_TTL_SECONDS = 4, 20, 3600
+FREE_DAILY_STARTER_CALLS, EXECUTION_TICKET_TTL_SECONDS = 15, 86400
 TAX_RESERVE_RATIO, OPERATING_CASH_RATIO, POST_TAX_TREASURY_SLICE_RATIO = 0.30, 0.60, 0.10
-HMAC_SECRET_KEY = os.environ.get(
-    "RADIAL_HMAC_SECRET", "radial-switchboard-v3-dev-hmac-replace-in-cloud-run-env"
-).encode("utf-8")
+HMAC_SECRET_KEY = os.environ.get("RADIAL_HMAC_SECRET", "radial-switchboard-v3-dev-hmac-replace-in-cloud-run-env").encode("utf-8")
+TELEMETRY_LOCAL_PATH, TELEMETRY_SUPABASE_KEY = "/tmp/radial_telemetry_state.json", "switchboard_telemetry_v3"
 
 
-CAPABILITY_NAMES: Tuple[str, ...] = (
-    "sql", "database", "code_exec", "git_ops", "web_fetch", "search_rag",
-    "math_verify", "finance_data", "crypto_chain", "payments_x402", "file_parse", "media_vision",
-    "maps_geo", "weather_env", "security_audit", "schema_transform", "vector_memory", "cloud_devops",
-    "messaging_comm", "data_analytics", "legal_tax", "commerce_sku", "agent_orchestration", "general",
+CAPABILITY_NAMES = (
+    "sql", "database", "code_exec", "git_ops", "web_fetch", "search_rag", "math_verify", "finance_data",
+    "crypto_chain", "payments_x402", "file_parse", "media_vision", "maps_geo", "weather_env", "security_audit",
+    "schema_transform", "vector_memory", "cloud_devops", "messaging_comm", "data_analytics", "legal_tax",
+    "commerce_sku", "agent_orchestration", "general",
 )
-CAPABILITY_BITS: Dict[str, int] = {name: (1 << idx) for idx, name in enumerate(CAPABILITY_NAMES)}
-
-
-READINESS_NAMES: Tuple[str, ...] = (
+CAPABILITY_BITS = {n: (1 << i) for i, n in enumerate(CAPABILITY_NAMES)}
+READINESS_NAMES = (
     "idempotent_read_safe", "seasoned_tenure", "x402_native_payable", "schema_drift_stable",
     "poison_scan_clean", "large_payload_capable", "high_concurrency_rpm", "zero_auth_instant",
 )
-READINESS_BITS: Dict[str, int] = {name: (1 << (24 + idx)) for idx, name in enumerate(READINESS_NAMES)}
-
-
-CAPABILITY_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+READINESS_BITS = {n: (1 << (24 + i)) for i, n in enumerate(READINESS_NAMES)}
+CAPABILITY_KEYWORDS = {
     "sql": ("sql", "postgres", "postgresql", "mysql", "sqlite", "duckdb", "bigquery", "clickhouse"),
-    "database": ("database", "supabase", "redis", "mongodb", "turso", "kv", "table", "query", "postgres", "postgresql", "mysql", "sqlite", "duckdb", "clickhouse", "cockroach", "vitess", "timescale"),
+    "database": ("database", "supabase", "redis", "mongodb", "turso", "kv", "table", "query", "postgres", "sqlite", "duckdb"),
     "code_exec": ("python", "typescript", "javascript", "sandbox", "compile", "execute_code", "repl", "coding", "ast"),
     "git_ops": ("github", "gitlab", "git", "pull_request", "commit", "repository", "branch"),
     "web_fetch": ("fetch", "scrape", "crawl", "browser", "playwright", "http", "webpage"),
@@ -70,7 +47,7 @@ CAPABILITY_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "payments_x402": ("x402", "usdc", "stripe", "payment", "invoice", "checkout", "settlement"),
     "file_parse": ("pdf", "docx", "xlsx", "csv", "markdown", "extract", "ocr", "document"),
     "media_vision": ("image", "vision", "audio", "video", "tts", "transcribe", "ffmpeg", "media"),
-    "maps_geo": ("map", "maps", "geocode", "route", "distance", "latitude", "longitude", "places", "zip"),
+    "maps_geo": ("map", "maps", "geocode", "route", "distance", "latitude", "longitude", "places"),
     "weather_env": ("weather", "noaa", "forecast", "wind", "temperature", "radar"),
     "security_audit": ("security", "vulnerability", "cve", "audit", "fuzz", "sanitize"),
     "schema_transform": ("json", "xml", "yaml", "graphql", "validate", "schema", "convert"),
@@ -82,16 +59,12 @@ CAPABILITY_KEYWORDS: Dict[str, Tuple[str, ...]] = {
     "commerce_sku": ("shopify", "catalog", "inventory", "order", "shipping", "product", "commerce"),
     "agent_orchestration": ("a2a", "mcp", "matchmake", "subagent", "workflow", "router"),
 }
-
-
-TOOL_POISONING_PATTERNS: Tuple[re.Pattern[str], ...] = (
+TOOL_POISONING_PATTERNS = (
     re.compile(r"ignore\s+(all\s+)?(previous|prior)\s+instructions", re.I),
     re.compile(r"(cat|read|upload|exfiltrate)\s+.*(\.ssh|\.env|id_rsa|aws/credentials)", re.I),
     re.compile(r"<\s*important\s*>.*do\s+not\s+mention", re.I | re.S),
     re.compile(r"system\s*prompt\s*override", re.I),
 )
-
-
 GRADE_TO_NIBBLE = {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6}
 NIBBLE_TO_GRADE = {v: k for k, v in GRADE_TO_NIBBLE.items()}
 NODE_TO_NIBBLE = {"Z": 1, "S": 2, "B": 3, "A": 4, "H": 5, "W": 9}
@@ -101,1151 +74,683 @@ NIBBLE_TO_NEIGHBOR = {v: k for k, v in NEIGHBOR_TO_NIBBLE.items()}
 PREF_TO_NIBBLE = {"S": 1, "C": 2, "N": 3, "D": 4, "M": 5}
 NIBBLE_TO_PREF = {v: k for k, v in PREF_TO_NIBBLE.items()}
 MULTI_PART_TLDS = {"co.uk", "org.uk", "com.au", "co.jp", "com.br", "co.in"}
-
-
-
-
-def extract_vendor_domain(endpoint: str) -> str:
+COMPUTE_MASK = CAPABILITY_BITS["code_exec"] | CAPABILITY_BITS["sql"] | CAPABILITY_BITS["database"] | CAPABILITY_BITS["cloud_devops"]
+VERIFY_MASK = CAPABILITY_BITS["math_verify"] | CAPABILITY_BITS["security_audit"] | CAPABILITY_BITS["schema_transform"] | CAPABILITY_BITS["legal_tax"]
+SYNTHETIC_LEGACY_IDS = {
+    "mcp://neon-fast-sql", "mcp://supabase-pg", "mcp://turso-libsql", "mcp://motherduck-olap", "mcp://clickhouse-col",
+    "mcp://cockroach-tx", "mcp://planetscale-vt", "mcp://timescale-ts", "mcp://tembo-vec", "mcp://crunchy-pg",
+    "mcp://e2b-firecracker-py", "mcp://semgrep-ast", "mcp://constellation-sec", "mcp://base-usdc-x402",
+}
+MCP_STDIO_BRIDGE_SOURCE = """#!/usr/bin/env python3
+\"\"\"MglennP Radial Switchboard -- MCP Stdio Bridge (Spec Rev 3.2.0) | support@radialswitchboard.com\"\"\"
+import json, os, sys, urllib.request
+MCP_URL = os.environ.get("RADIAL_MCP_URL", "https://radialswitchboard.com/mcp")
+PASS_TOKEN = os.environ.get("RADIAL_PASS_TOKEN", "").strip()
+for line in sys.stdin:
+    raw = line.strip()
+    if not raw: continue
     try:
-        host = (urllib.parse.urlparse(endpoint).hostname or "").lower().strip(".")
-    except Exception:
-        host = ""
-    if not host:
-        return endpoint.lower()[:32]
-    parts = host.split(".")
-    if len(parts) >= 3 and ".".join(parts[-2:]) in MULTI_PART_TLDS:
-        return ".".join(parts[-3:])
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+        h = {"Content-Type": "application/json", "Accept": "application/json", "mcp-protocol-version": "2026-07-28"}
+        if PASS_TOKEN: h["X-Radial-Pass"] = PASS_TOKEN
+        with urllib.request.urlopen(urllib.request.Request(MCP_URL, data=raw.encode(), headers=h, method="POST"), timeout=15) as r:
+            b = r.read().decode("utf-8", errors="replace").strip()
+            if b: sys.stdout.write(b + "\\n"); sys.stdout.flush()
+    except Exception as exc:
+        sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32000, "message": str(exc)}}) + "\\n"); sys.stdout.flush()
+"""
 
 
+def extract_vendor_domain(ep: str) -> str:
+    host = (urllib.parse.urlparse(ep).hostname or "").lower().strip(".") if "://" in (ep or "") else ""
+    if not host: return (ep or "").lower()[:32]
+    pts = host.split(".")
+    return ".".join(pts[-3:]) if len(pts) >= 3 and ".".join(pts[-2:]) in MULTI_PART_TLDS else (".".join(pts[-2:]) if len(pts) >= 2 else host)
 
 
-def infer_capabilities_from_intent(intent_text: str) -> List[str]:
-    low = (intent_text or "").lower()
-    matched = [cap for cap, kws in CAPABILITY_KEYWORDS.items() if any(kw in low for kw in kws)]
-    return matched if matched else ["general"]
+def infer_capabilities_from_intent(txt: str) -> List[str]:
+    low = (txt or "").lower()
+    m = [c for c, kws in CAPABILITY_KEYWORDS.items() if any(k in low for k in kws)]
+    return m if m else ["general"]
 
 
+def issue_execution_ticket(agent_id: str, now_unix: Optional[int] = None) -> str:
+    ts = int(now_unix if now_unix is not None else time.time())
+    ah = hashlib.sha256((agent_id or "").strip().encode()).hexdigest()[:12]
+    core = f"v2.{ts}.{ah}.{secrets.token_hex(4)}"
+    return f"{core}.{hmac.new(HMAC_SECRET_KEY, core.encode(), hashlib.sha256).hexdigest()[:24]}"
+
+
+def verify_execution_ticket(agent_id: str, ticket: str) -> Tuple[bool, str]:
+    pts = (ticket or "").strip().split(".")
+    if len(pts) != 5 or pts[0] != "v2": return False, "INVALID_FORMAT"
+    try: ts = int(pts[1])
+    except ValueError: return False, "CORRUPT_TS"
+    now_u = int(time.time())
+    if now_u - ts > EXECUTION_TICKET_TTL_SECONDS or ts > now_u + 300: return False, "EXPIRED"
+    if not hmac.compare_digest(pts[2], hashlib.sha256((agent_id or "").strip().encode()).hexdigest()[:12]): return False, "AGENT_MISMATCH"
+    exp = hmac.new(HMAC_SECRET_KEY, f"v2.{ts}.{pts[2]}.{pts[3]}".encode(), hashlib.sha256).hexdigest()[:24]
+    return (True, "VALID") if hmac.compare_digest(pts[4], exp) else (False, "INVALID_HMAC")
 
 
 class MgleNnp64Codec:
     @staticmethod
-    def pack(
-        merit: str, guarantee: str, latency: str, economy: str,
-        node_honesty: str, neighbor_proto: str, preference: str,
-        readiness_mask: int, capability_mask: int, hop_ttl: int = 0,
-    ) -> Tuple[str, int, str]:
-        m_c, g_c, l_c, e_c = merit[:1].upper(), guarantee[:1].upper(), latency[:1].upper(), economy[:1].upper()
-        n1_c, n2_c, p_c = node_honesty[:1].upper(), neighbor_proto[:1].upper(), preference[:1].upper()
-        call_sign = f"{m_c}{g_c}{l_c}{e_c}-{n1_c}{n2_c}{p_c}"
-        slot0 = ((hop_ttl & 0x3) << 2) | (SCHEMA_NIBBLE & 0x3)
-        upper_32 = (
-            ((slot0 & 0xF) << 28)
-            | ((GRADE_TO_NIBBLE.get(m_c, 3) & 0xF) << 24)
-            | ((GRADE_TO_NIBBLE.get(g_c, 5) & 0xF) << 20)
-            | ((GRADE_TO_NIBBLE.get(l_c, 5) & 0xF) << 16)
-            | ((GRADE_TO_NIBBLE.get(e_c, 1) & 0xF) << 12)
-            | ((NODE_TO_NIBBLE.get(n1_c, 1) & 0xF) << 8)
-            | ((NEIGHBOR_TO_NIBBLE.get(n2_c, 1) & 0xF) << 4)
-            | (PREF_TO_NIBBLE.get(p_c, 1) & 0xF)
-        )
-        lower_32 = (readiness_mask & 0xFF000000) | (capability_mask & 0x00FFFFFF)
-        u64 = ((upper_32 & 0xFFFFFFFF) << 32) | (lower_32 & 0xFFFFFFFF)
-        return call_sign, u64, f"0x{u64:016X}"
+    def pack(merit: str, guarantee: str, latency: str, economy: str, node_h: str, neigh: str, pref: str, r_mask: int, c_mask: int, hop: int = 0) -> Tuple[str, int, str]:
+        mc, gc, lc, ec = merit[:1].upper(), guarantee[:1].upper(), latency[:1].upper(), economy[:1].upper()
+        n1, n2, pc = node_h[:1].upper(), neigh[:1].upper(), pref[:1].upper()
+        s0 = ((hop & 0x3) << 2) | (SCHEMA_NIBBLE & 0x3)
+        u32 = ((s0 & 0xF) << 28) | (GRADE_TO_NIBBLE.get(mc, 3) << 24) | (GRADE_TO_NIBBLE.get(gc, 5) << 20) | (GRADE_TO_NIBBLE.get(lc, 5) << 16) | (GRADE_TO_NIBBLE.get(ec, 1) << 12) | (NODE_TO_NIBBLE.get(n1, 1) << 8) | (NEIGHBOR_TO_NIBBLE.get(n2, 1) << 4) | PREF_TO_NIBBLE.get(pc, 1)
+        u64 = ((u32 & 0xFFFFFFFF) << 32) | ((r_mask & 0xFF000000) | (c_mask & 0x00FFFFFF))
+        return f"{mc}{gc}{lc}{ec}-{n1}{n2}{pc}", u64, f"0x{u64:016X}"
 
 
     @staticmethod
     def unpack(u64: int) -> Dict[str, Any]:
         u32, l32 = (u64 >> 32) & 0xFFFFFFFF, u64 & 0xFFFFFFFF
-        m_c = NIBBLE_TO_GRADE.get((u32 >> 24) & 0xF, "C")
-        g_c = NIBBLE_TO_GRADE.get((u32 >> 20) & 0xF, "E")
-        l_c = NIBBLE_TO_GRADE.get((u32 >> 16) & 0xF, "E")
-        e_c = NIBBLE_TO_GRADE.get((u32 >> 12) & 0xF, "A")
-        n1_c = NIBBLE_TO_NODE.get((u32 >> 8) & 0xF, "Z")
-        n2_c = NIBBLE_TO_NEIGHBOR.get((u32 >> 4) & 0xF, "E")
-        p_c = NIBBLE_TO_PREF.get(u32 & 0xF, "S")
-        return {
-            "mgle_nnp_code": f"{m_c}{g_c}{l_c}{e_c}-{n1_c}{n2_c}{p_c}",
-            "u64_hex": f"0x{u64:016X}",
-            "merit": m_c, "guarantee": g_c, "latency": l_c, "economy": e_c,
-            "node_honesty": n1_c, "neighbor_protocol": n2_c, "preference": p_c,
-            "readiness_flags": [n for n, b in READINESS_BITS.items() if (l32 & b) != 0],
-            "capabilities": [n for n, b in CAPABILITY_BITS.items() if (l32 & b) != 0],
-        }
+        mc, gc, lc, ec = NIBBLE_TO_GRADE.get((u32 >> 24) & 0xF, "C"), NIBBLE_TO_GRADE.get((u32 >> 20) & 0xF, "E"), NIBBLE_TO_GRADE.get((u32 >> 16) & 0xF, "E"), NIBBLE_TO_GRADE.get((u32 >> 12) & 0xF, "A")
+        n1, n2, pc = NIBBLE_TO_NODE.get((u32 >> 8) & 0xF, "Z"), NIBBLE_TO_NEIGHBOR.get((u32 >> 4) & 0xF, "E"), NIBBLE_TO_PREF.get(u32 & 0xF, "S")
+        return {"mgle_nnp_code": f"{mc}{gc}{lc}{ec}-{n1}{n2}{pc}", "u64_hex": f"0x{u64:016X}", "merit": mc, "guarantee": gc, "latency": lc, "economy": ec, "readiness_flags": [n for n, b in READINESS_BITS.items() if l32 & b], "capabilities": [n for n, b in CAPABILITY_BITS.items() if l32 & b]}
 
 
     @staticmethod
-    def build_query_masks(
-        required_capabilities: Sequence[str],
-        require_instant_zero_auth: bool = False,
-        require_poison_clean: bool = True,
-        max_latency_grade: str = "C",
-        require_zero_hop: bool = True,
-    ) -> Tuple[int, int, str]:
-        req = 0
-        for cap in required_capabilities:
-            req |= CAPABILITY_BITS.get(cap.strip().lower(), 0)
-        if require_poison_clean:
-            req |= READINESS_BITS["poison_scan_clean"]
-        if require_instant_zero_auth:
-            req |= READINESS_BITS["zero_auth_instant"]
-        return req, 0, f"**{max_latency_grade.upper()}*-{'Z' if require_zero_hop else '*'}**"
+    def build_query_masks(caps: Sequence[str], zero_auth: bool = False, poison_clean: bool = True, max_lat: str = "C", zero_hop: bool = True) -> Tuple[int, int, str]:
+        req = READINESS_BITS["poison_scan_clean"] if poison_clean else 0
+        if zero_auth: req |= READINESS_BITS["zero_auth_instant"]
+        for c in caps: req |= CAPABILITY_BITS.get(c.strip().lower(), 0)
+        return req, 0, f"**{max_lat[:1].upper()}*-{'Z' if zero_hop else '*'}**"
 
 
-
-
-def select_varied_top_k(
-    scored_candidates: Sequence[Tuple[float, Dict[str, Any]]],
-    top_k: int = DEFAULT_FLASH_TOP_K,
-) -> Tuple[List[Tuple[Dict[str, Any], str, str]], Dict[str, Any]]:
-    limit = max(1, min(MAX_FLASH_TOP_K, int(top_k or DEFAULT_FLASH_TOP_K)))
-    enriched = [
-        (
-            sc,
-            extract_vendor_domain(str(r.get("endpoint") or "")),
-            str(r.get("tool_schema_hash_16") or "0000000000000000"),
-            f"{r.get('auth_mode','none')}:{r.get('latency_grade','B')}:{r.get('preference_class','S')}",
-            r,
-        )
-        for sc, r in scored_candidates
-    ]
-    chosen: List[Tuple[Dict[str, Any], str, str]] = []
-    chosen_ids: set[str] = set()
-    seen_vendors: Dict[str, int] = {}
-    seen_schemas: set[str] = set()
-    seen_profiles: set[str] = set()
-
-
-    pool = list(enriched)
-    while len(chosen) < limit and pool:
-        best_i, best_adj = -1, -1.0
-        for idx, (sc, v_dom, s_hash, e_prof, rec) in enumerate(pool):
+def select_varied_top_k(scored: Sequence[Tuple[float, Dict[str, Any]]], top_k: int = DEFAULT_FLASH_TOP_K) -> Tuple[List[Tuple[Dict[str, Any], str, str]], Dict[str, Any]]:
+    lim = max(1, min(MAX_FLASH_TOP_K, int(top_k or DEFAULT_FLASH_TOP_K)))
+    enr = [(sc, extract_vendor_domain(str(r.get("endpoint") or "")), str(r.get("tool_schema_hash_16") or "0000000000000000"), f"{r.get('auth_mode','none')}:{r.get('latency_grade','B')}", r) for sc, r in scored]
+    chosen, c_ids, v_seen, s_seen, p_seen = [], set(), {}, set(), set()
+    pool = list(enr)
+    while len(chosen) < lim and pool:
+        bi, ba = -1, -1.0
+        for i, (sc, vd, sh, ep, rec) in enumerate(pool):
             aid = str(rec.get("agent_id") or "")
-            if aid in chosen_ids or v_dom in seen_vendors:
-                continue
-            if s_hash != "0000000000000000" and s_hash in seen_schemas:
-                continue
-            adj = sc + (0.035 if e_prof not in seen_profiles else 0.0)
-            if adj > best_adj:
-                best_adj, best_i = adj, idx
-        if best_i < 0:
-            break
-        sc, v_dom, s_hash, e_prof, rec = pool.pop(best_i)
-        chosen.append((rec, "INDEPENDENT_VENDOR_AND_SCHEMA", v_dom))
-        chosen_ids.add(str(rec.get("agent_id") or ""))
-        seen_vendors[v_dom] = seen_vendors.get(v_dom, 0) + 1
-        if s_hash != "0000000000000000":
-            seen_schemas.add(s_hash)
-        seen_profiles.add(e_prof)
+            if aid in c_ids or vd in v_seen or (sh != "0000000000000000" and sh in s_seen): continue
+            adj = sc + (0.035 if ep not in p_seen else 0.0)
+            if adj > ba: ba, bi = adj, i
+        if bi < 0: break
+        sc, vd, sh, ep, rec = pool.pop(bi)
+        chosen.append((rec, "INDEPENDENT_VENDOR_AND_SCHEMA", vd)); c_ids.add(str(rec.get("agent_id") or ""))
+        v_seen[vd] = v_seen.get(vd, 0) + 1; p_seen.add(ep)
+        if sh != "0000000000000000": s_seen.add(sh)
+    for sc, vd, sh, ep, rec in enr:
+        if len(chosen) >= lim: break
+        aid = str(rec.get("agent_id") or "")
+        if aid not in c_ids:
+            chosen.append((rec, "SECONDARY_VARIANT", vd)); c_ids.add(aid); v_seen[vd] = v_seen.get(vd, 0) + 1
+    return chosen, {"requested_top_k": lim, "returned_count": len(chosen), "unique_vendor_domains": len(v_seen), "unique_tool_schemas": len(s_seen), "monoculture_protection": "ACTIVE_LINEAGE_DIVERSITY"}
 
 
-    if len(chosen) < limit:
-        for sc, v_dom, s_hash, e_prof, rec in enriched:
-            if len(chosen) >= limit:
-                break
-            aid = str(rec.get("agent_id") or "")
-            if aid in chosen_ids:
-                continue
-            if (v_dom not in seen_vendors or (s_hash != "0000000000000000" and s_hash not in seen_schemas)) and seen_vendors.get(v_dom, 0) < 2:
-                chosen.append((rec, "DISTINCT_HOST_OR_SCHEMA_VARIANT", v_dom))
-                chosen_ids.add(aid)
-                seen_vendors[v_dom] = seen_vendors.get(v_dom, 0) + 1
-                if s_hash != "0000000000000000":
-                    seen_schemas.add(s_hash)
-                seen_profiles.add(e_prof)
-
-
-    if len(chosen) < limit:
-        for sc, v_dom, s_hash, e_prof, rec in enriched:
-            if len(chosen) >= limit:
-                break
-            aid = str(rec.get("agent_id") or "")
-            if aid not in chosen_ids:
-                chosen.append((rec, "SECONDARY_REPLICA_FALLBACK", v_dom))
-                chosen_ids.add(aid)
-                seen_vendors[v_dom] = seen_vendors.get(v_dom, 0) + 1
-                seen_profiles.add(e_prof)
-
-
-    return chosen, {
-        "requested_top_k": limit,
-        "returned_count": len(chosen),
-        "unique_vendor_domains": len(seen_vendors),
-        "unique_tool_schemas": len(seen_schemas),
-        "unique_execution_profiles": len(seen_profiles),
-        "monoculture_protection": "ACTIVE_LINEAGE_AND_PROFILE_DIVERSITY",
-    }
-
-
-
-
-def flash_unsorted_pool(
-    unsorted_pool: Sequence[Dict[str, Any]],
-    required_capabilities: Sequence[str],
-    require_instant_zero_auth: bool = False,
-    max_latency_grade: str = "C",
-    require_zero_hop: bool = True,
-    top_k: int = DEFAULT_FLASH_TOP_K,
-) -> Dict[str, Any]:
-    t0 = time.perf_counter()
-    req_bits, _, coupler_hint = MgleNnp64Codec.build_query_masks(
-        required_capabilities, require_instant_zero_auth, True, max_latency_grade, require_zero_hop
+def assemble_complementary_crew(scored: Sequence[Tuple[float, Dict[str, Any]]], req_cap: int) -> Tuple[List[Tuple[Dict[str, Any], str, str]], Dict[str, Any]]:
+    if not scored: return [], {"crew_size": 0, "unique_vendor_domains": 0, "single_agent_coverage_pct": 0.0, "crew_combined_coverage_pct": 0.0, "provider_independence_verified": False}
+    enr = [(sc, extract_vendor_domain(str(r.get("endpoint") or "")), int(r.get("domain_mask") or (int(r.get("mgle_nnp_64bit") or 0) & 0x00FFFFFF)), r) for sc, r in scored]
+    u_ids, u_vends, crew, masks = set(), set(), [], []
+    roles = (
+        ("1_COMPUTE_EXECUTION", lambda s, v, m: s + (0.12 if (m & COMPUTE_MASK) else 0.0) + ((m & req_cap).bit_count() * 0.08 if req_cap else 0.0)),
+        ("2_DOMAIN_KNOWLEDGE_COMPLEMENT", lambda s, v, m: s + (0.25 if v not in u_vends else -0.15) + (((m & ~(masks[0] if masks else 0)) & req_cap).bit_count() * 0.22 if req_cap else 0.0)),
+        ("3_INDEPENDENT_VERIFICATION", lambda s, v, m: s + (0.30 if v not in u_vends else -0.20) + (0.18 if (m & VERIFY_MASK) else 0.0)),
     )
-    max_lat_nib = GRADE_TO_NIBBLE.get(max_latency_grade[:1].upper(), 3)
-    exact: List[Tuple[float, Dict[str, Any]]] = []
-    partial: List[Tuple[int, float, Dict[str, Any]]] = []
+    for r_name, fn in roles:
+        best, bs = None, -999.0
+        for sc, vd, cm, rec in enr:
+            if str(rec.get("agent_id") or "") in u_ids: continue
+            adj = fn(sc, vd, cm)
+            if adj > bs: bs, best = adj, (rec, r_name, vd, cm)
+        if best:
+            rc, rn, vd, cm = best
+            crew.append((rc, rn, vd)); u_ids.add(str(rc.get("agent_id") or "")); u_vends.add(vd); masks.append(cm)
+    comb = 0
+    for m in masks: comb |= m
+    den = max(1, req_cap.bit_count()) if req_cap else 1
+    scov = round(min(100.0, (((masks[0] if masks else 0) & req_cap).bit_count() / den) * 100.0), 1) if req_cap else 100.0
+    ccov = round(min(100.0, ((comb & req_cap).bit_count() / den) * 100.0), 1) if req_cap else 100.0
+    return crew, {"crew_size": len(crew), "roles_assigned": [x[1] for x in crew], "unique_vendor_domains": len(u_vends), "single_agent_coverage_pct": scov, "crew_combined_coverage_pct": ccov, "provider_independence_verified": len(u_vends) == len(crew) and len(crew) > 0}
 
 
-    for rec in unsorted_pool:
+def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zero_auth: bool = False, max_lat: str = "C", zero_hop: bool = True, top_k: int = DEFAULT_FLASH_TOP_K, mode: str = "top10_varied") -> Dict[str, Any]:
+    t0 = time.perf_counter()
+    req_bits, _, coupler = MgleNnp64Codec.build_query_masks(caps, zero_auth, True, max_lat, zero_hop)
+    max_nib = GRADE_TO_NIBBLE.get(max_lat[:1].upper(), 3)
+    exact, partial, viable = [], [], []
+    for rec in pool:
         u64 = int(rec.get("mgle_nnp_64bit") or 0)
         u32, l32 = (u64 >> 32) & 0xFFFFFFFF, u64 & 0xFFFFFFFF
-        if ((u32 >> 20) & 0xF) > 2 or ((u32 >> 16) & 0xF) > max_lat_nib:
-            continue
-        if require_zero_hop and ((u32 >> 8) & 0xF) != 1:
-            continue
+        if ((u32 >> 20) & 0xF) > 2 or ((u32 >> 16) & 0xF) > max_nib or (zero_hop and ((u32 >> 8) & 0xF) != 1): continue
         wt = float(rec.get("synaptic_weight") or 0.80)
-        if (l32 & req_bits) == req_bits:
-            m_nib, l_nib = (u32 >> 24) & 0xF, (u32 >> 16) & 0xF
-            exact.append((round(wt + 0.05 * (6 - m_nib) + 0.02 * (6 - l_nib), 4), rec))
-        elif req_bits != 0:
-            ov = (l32 & req_bits).bit_count()
-            if ov > 0:
-                partial.append((ov, wt, rec))
-
-
-    exact.sort(key=lambda x: x[0], reverse=True)
-    if exact:
-        diversified, var_summary = select_varied_top_k(exact, top_k=top_k)
-        mode = "EXACT_64BIT_RESONANCE_TOP10_VARIED"
+        bs = round(wt + 0.05 * (6 - ((u32 >> 24) & 0xF)) + 0.02 * (6 - ((u32 >> 16) & 0xF)), 4)
+        viable.append((bs + (l32 & req_bits).bit_count() * 0.12, rec))
+        if (l32 & req_bits) == req_bits: exact.append((bs, rec))
+        elif (l32 & req_bits).bit_count() > 0: partial.append(((l32 & req_bits).bit_count(), wt, rec))
+    exact.sort(key=lambda x: x[0], reverse=True); viable.sort(key=lambda x: x[0], reverse=True)
+    crew_m = None
+    if (mode or "").strip().lower() == "crew":
+        div, crew_m = assemble_complementary_crew(viable, req_bits & 0x00FFFFFF)
+        var_s, m_mode = {"requested_top_k": 3, "returned_count": len(div), "unique_vendor_domains": crew_m["unique_vendor_domains"]}, ("COMPLEMENTARY_3_AGENT_CREW_TRIAD" if div else "NO_LIVE_RESONANCE")
+    elif exact:
+        div, var_s = select_varied_top_k(exact, top_k); m_mode = "EXACT_64BIT_RESONANCE_TOP10_VARIED"
     elif partial:
         partial.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        diversified, var_summary = select_varied_top_k([(round(ov * 0.25 + wt, 4), r) for ov, wt, r in partial], top_k=top_k)
-        mode = "CLOSEST_POPCNT_RESONANCE_TOP10_VARIED"
+        div, var_s = select_varied_top_k([(round(ov * 0.25 + wt, 4), r) for ov, wt, r in partial], top_k); m_mode = "CLOSEST_POPCNT_RESONANCE_TOP10_VARIED"
     else:
-        diversified, var_summary = select_varied_top_k([], top_k=top_k)
-        mode = "NO_LIVE_RESONANCE"
+        div, var_s = [], {"requested_top_k": top_k, "returned_count": 0, "unique_vendor_domains": 0}; m_mode = "NO_LIVE_RESONANCE"
+    ms, now_u = round((time.perf_counter() - t0) * 1000.0, 4), int(time.time())
+    fins = [{"rank": i, "agent_id": r.get("agent_id"), "name": r.get("name"), "endpoint": r.get("endpoint"), "vendor_domain": vd, "variability_role": rl, "crew_role": rl if crew_m else None, "mgle_nnp_code": r.get("mgle_nnp_stamp"), "mgle_nnp_stamp": r.get("mgle_nnp_stamp"), "mgle_nnp_u64_hex": f"0x{int(r.get('mgle_nnp_64bit') or 0):016X}", "domain_mask": r.get("domain_mask", 0), "warm_latency_ms": r.get("avg_latency_ms"), "auth_mode": r.get("auth_mode", "none"), "tool_schema_hash_16": r.get("tool_schema_hash_16"), "synaptic_weight": r.get("synaptic_weight"), "execution_ticket": issue_execution_ticket(str(r.get("agent_id") or ""), now_u), "pre_handshake_dossier": r.get("dossier_json") or {}} for i, (r, rl, vd) in enumerate(div, 1)]
+    out = {"spec_version": SPEC_VERSION, "pool_scanned_unsorted": len(pool), "single_pass_flash_ms": ms, "match_mode": m_mode, "coupler_applied": coupler, "required_lower32_hex": f"0x{req_bits:08X}", "variability_summary": var_s, "finalist_count": len(fins), "finalists": fins, "matches": fins, "top_match": fins[0] if fins else {}}
+    if crew_m is not None: out["crew_manifest"] = crew_m
+    return out
 
 
-    elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 4)
-    finalists = [
-        {
-            "rank": idx,
-            "agent_id": rec.get("agent_id"),
-            "name": rec.get("name"),
-            "endpoint": rec.get("endpoint"),
-            "vendor_domain": v_dom,
-            "variability_role": v_role,
-            "mgle_nnp_code": rec.get("mgle_nnp_stamp"),
-            "mgle_nnp_stamp": rec.get("mgle_nnp_stamp"),
-            "mgle_nnp_u64_hex": f"0x{int(rec.get('mgle_nnp_64bit') or 0):016X}",
-            "domain_mask": rec.get("domain_mask", 0),
-            "warm_latency_ms": rec.get("avg_latency_ms"),
-            "auth_mode": rec.get("auth_mode", "none"),
-            "tool_schema_hash_16": rec.get("tool_schema_hash_16"),
-            "synaptic_weight": rec.get("synaptic_weight"),
-            "pre_handshake_dossier": rec.get("dossier_json") or {},
-        }
-        for idx, (rec, v_role, v_dom) in enumerate(diversified, start=1)
-    ]
-    return {
-        "spec_version": SPEC_VERSION,
-        "pool_scanned_unsorted": len(unsorted_pool),
-        "total_qualified_before_diversification": len(exact) or len(partial),
-        "single_pass_flash_ms": elapsed_ms,
-        "timings": {"bitwise_smell_test_ms": elapsed_ms, "total_server_ms": elapsed_ms},
-        "match_mode": mode,
-        "coupler_applied": coupler_hint,
-        "required_lower32_hex": f"0x{req_bits:08X}",
-        "variability_summary": var_summary,
-        "finalist_count": len(finalists),
-        "finalists": finalists,
-        "matches": finalists,
-        "top_match": finalists[0] if finalists else {},
-    }
-
-
-
-
-def scan_tools_for_poisoning(wired_tools: Sequence[Dict[str, Any]]) -> Tuple[bool, List[str]]:
-    findings: List[str] = []
-    for tool in wired_tools:
-        if not isinstance(tool, dict):
-            continue
-        t_name = str(tool.get("name") or "unnamed")
-        joined = " ".join([
-            t_name,
-            str(tool.get("description") or ""),
-            json.dumps(tool["inputSchema"]) if isinstance(tool.get("inputSchema"), dict) else "",
-        ])
-        for pat in TOOL_POISONING_PATTERNS:
-            if pat.search(joined):
-                findings.append(f"Suspicious pattern in '{t_name}': {pat.pattern}")
-    return (len(findings) == 0), findings
-
-
-
-
-def extract_capabilities_and_hash(text_blob: str, wired_tools: Sequence[Dict[str, Any]]) -> Tuple[int, str, List[Dict[str, Any]]]:
-    parts = [text_blob or ""]
-    inv: List[Dict[str, Any]] = []
-    for tool in sorted(wired_tools, key=lambda x: str(x.get("name", "") if isinstance(x, dict) else "")):
-        if not isinstance(tool, dict):
-            continue
-        t_name, t_desc = str(tool.get("name") or "").strip(), str(tool.get("description") or "").strip()[:180]
-        schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
-        props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
-        reqs = schema.get("required") if isinstance(schema.get("required"), list) else []
-        parts.extend([t_name, t_desc, *(str(k) for k in props.keys())])
-        inv.append({
-            "tool": t_name,
-            "summary": t_desc,
-            "inputs": {str(k): str((v or {}).get("type", "any")) for k, v in list(props.items())[:12] if isinstance(v, dict)},
-            "required": [str(r) for r in reqs[:12]],
-        })
-    low = " ".join(parts).lower()
+def extract_capabilities_and_hash(blob: str, tools: Sequence[Dict[str, Any]]) -> Tuple[int, str, List[Dict[str, Any]]]:
+    pts, inv = [blob or ""], []
+    for t in sorted(tools, key=lambda x: str(x.get("name", "") if isinstance(x, dict) else "")):
+        if not isinstance(t, dict): continue
+        tn, td = str(t.get("name") or "").strip(), str(t.get("description") or "").strip()[:180]
+        sc = t.get("inputSchema") if isinstance(t.get("inputSchema"), dict) else {}
+        pr = sc.get("properties") if isinstance(sc.get("properties"), dict) else {}
+        rq = sc.get("required") if isinstance(sc.get("required"), list) else []
+        pts.extend([tn, td, *(str(k) for k in pr.keys())])
+        inv.append({"tool": tn, "summary": td, "inputs": {str(k): str((v or {}).get("type", "any")) for k, v in list(pr.items())[:12] if isinstance(v, dict)}, "required": [str(r) for r in rq[:12]]})
+    low = " ".join(pts).lower()
     mask = 0
-    for c_name, kws in CAPABILITY_KEYWORDS.items():
-        if any(kw in low for kw in kws):
-            mask |= CAPABILITY_BITS[c_name]
-    if mask == 0:
-        mask = CAPABILITY_BITS["general"]
-    if inv:
-        canon = json.dumps([{"n": t["tool"], "i": sorted(t["inputs"].keys()), "r": sorted(t["required"])} for t in inv], sort_keys=True, separators=(",", ":"))
-        h16 = hashlib.sha256(canon.encode("utf-8")).hexdigest()[:16]
-    else:
-        h16 = "0000000000000000"
+    for cn, kws in CAPABILITY_KEYWORDS.items():
+        if any(k in low for k in kws): mask |= CAPABILITY_BITS[cn]
+    if mask == 0: mask = CAPABILITY_BITS["general"]
+    h16 = hashlib.sha256(json.dumps([{"n": t["tool"], "i": sorted(t["inputs"].keys()), "r": sorted(t["required"])} for t in inv], sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16] if inv else "0000000000000000"
     return mask, h16, inv
 
 
-
-
-def build_agent_record_and_dossier(
-    agent_id: str, name: str, description: str, endpoint: str,
-    http_alive: bool, cold_latency_ms: Optional[float], warm_latency_ms: Optional[float],
-    wired_tools: Sequence[Dict[str, Any]], auth_mode: str = "none",
-    rate_limit_rpm: Optional[int] = None, x402_supported: bool = False,
-    prev_record: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    prev = prev_record or {}
-    enc = int(prev.get("encounter_count") or 0) + 1
-    wins, fails = int(prev.get("room_completions") or 0), int(prev.get("room_failures") or 0)
-    prev_hash, prev_wt = str(prev.get("tool_schema_hash_16") or ""), float(prev.get("synaptic_weight") or 0.80)
-    prev_tools = (prev.get("dossier_json") or {}).get("verified_tools") or []
-
-
-    low_ep = (endpoint or "").strip().lower()
+def build_agent_record_and_dossier(aid: str, name: str, desc: str, ep: str, alive: bool, cold_ms: Optional[float], warm_ms: Optional[float], tools: Sequence[Dict[str, Any]], auth_m: str = "none", rpm: Optional[int] = None, x402_ok: bool = False, prev_record: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    pv = prev_record or {}
+    enc, wins, fails = int(pv.get("encounter_count") or 0) + 1, int(pv.get("room_completions") or 0), int(pv.get("room_failures") or 0)
+    p_wt = float(pv.get("synaptic_weight") or 0.80)
+    low_ep = (ep or "").strip().lower()
     is_repo = not low_ep.startswith(("http://", "https://")) or any(h in low_ep for h in ("github.com/", "gitlab.com/", "npmjs.com/", "pypi.org/"))
-    poison_ok, poison_list = scan_tools_for_poisoning(wired_tools)
-
-
-    if wired_tools:
-        cap_mask, h16, c_tools = extract_capabilities_and_hash(f"{name} {description}", wired_tools)
-    elif prev_tools:
-        cap_mask, h16, c_tools = int(prev.get("domain_mask") or CAPABILITY_BITS["general"]), prev_hash or "0000000000000000", list(prev_tools)
-        poison_ok = bool(prev.get("poison_scan_clean", True))
+    p_ok = not any(pat.search(json.dumps(t)) for t in tools if isinstance(t, dict) for pat in TOOL_POISONING_PATTERNS)
+    c_mask, h16, c_tools = extract_capabilities_and_hash(f"{name} {desc}", tools)
+    eff = warm_ms if warm_ms is not None else cold_ms
+    lat_g = "E" if (not alive or eff is None or is_repo) else ("A" if eff <= 120 else ("B" if eff <= 300 else ("C" if eff <= 700 else ("D" if eff <= 1500 else "E"))))
+    if not p_ok: guar_g, merit_g, node_h, n_wt, st = "F", "F", "W", 0.0, "SLASHED_POISON_GRADE_F"
+    elif is_repo: guar_g, merit_g, node_h, n_wt, st = "D", "C", "Z", min(p_wt, 0.50), "UNHOSTED_REPO_GRADE_D"
+    elif not alive: guar_g, merit_g, node_h, n_wt, st = "E", "D", "Z", max(0.10, round(p_wt - 0.20, 4)), "QUARANTINED_OFFLINE_GRADE_E"
     else:
-        cap_mask, h16, c_tools = extract_capabilities_and_hash(f"{name} {description}", [])
-        if prev_hash and prev_hash != "0000000000000000":
-            h16 = prev_hash
-
-
-    drifted = bool(prev_hash and prev_hash != "0000000000000000" and h16 != "0000000000000000" and prev_hash != h16)
-    eff_ms = warm_latency_ms if warm_latency_ms is not None else cold_latency_ms
-    if not http_alive or eff_ms is None or is_repo:
-        lat_g = str(prev.get("latency_grade") or "E") if http_alive else "E"
-    elif eff_ms <= 120.0:
-        lat_g = "A"
-    elif eff_ms <= 300.0:
-        lat_g = "B"
-    elif eff_ms <= 700.0:
-        lat_g = "C"
-    elif eff_ms <= 1500.0:
-        lat_g = "D"
-    else:
-        lat_g = "E"
-
-
-    if not poison_ok:
-        guar_g, merit_g, node_h, new_wt, status = "F", "F", "W", 0.0, "SLASHED_TOOL_POISONING_GRADE_F"
-    elif is_repo:
-        guar_g, merit_g, node_h, new_wt, status = "D", "C", "Z", min(prev_wt, 0.50), "UNHOSTED_SOURCE_REPO_GRADE_D"
-    elif not http_alive:
-        guar_g, merit_g, node_h, new_wt, status = "E", "D", "Z", round(max(0.10, prev_wt - 0.20), 4), "QUARANTINED_OFFLINE_GRADE_E"
-    else:
-        guar_g = "A" if (c_tools or prev.get("guarantee_grade") == "A") else "B"
-        merit_g = "A" if (wins >= 20 and fails == 0) else ("B" if (wins >= 5 and wins >= fails * 4) else str(prev.get("merit_grade") or "C")[:1].upper())
-        node_h = "W" if (eff_ms and eff_ms > 1500.0) else "Z"
-        new_wt = round(min(0.99, prev_wt + (0.04 if c_tools else 0.01)), 4)
-        status = "VERIFIED_LIVE_TOOLS_GRADE_A" if guar_g == "A" else "VERIFIED_LIVE_HTTP_GRADE_B"
-
-
-    r_mask = 0
-    if poison_ok:
-        r_mask |= READINESS_BITS["poison_scan_clean"]
-    if not drifted:
-        r_mask |= READINESS_BITS["schema_drift_stable"]
-    if auth_mode == "none" and not is_repo and http_alive:
-        r_mask |= READINESS_BITS["zero_auth_instant"]
-    if (rate_limit_rpm or 0) >= 60:
-        r_mask |= READINESS_BITS["high_concurrency_rpm"]
-    if x402_supported:
-        r_mask |= READINESS_BITS["x402_native_payable"]
-    if enc >= 25:
-        r_mask |= READINESS_BITS["seasoned_tenure"]
-
-
-    econ_g, pref_g = ("B" if x402_supported else "A"), ("S" if lat_g in ("A", "B") else "D")
-    stamp, u64, u64_hex = MgleNnp64Codec.pack(merit_g, guar_g, lat_g, econ_g, node_h, "E", pref_g, r_mask, cap_mask)
-    tenure = "veteran_100plus" if enc >= 100 else ("established_25plus" if enc >= 25 else "newcomer")
+        guar_g = "A" if (c_tools or pv.get("guarantee_grade") == "A") else "B"
+        merit_g, node_h, n_wt = ("B" if wins >= 5 else "C"), "Z", min(0.99, round(p_wt + (0.04 if c_tools else 0.01), 4))
+        st = f"VERIFIED_LIVE_GRADE_{guar_g}"
+    r_mask = (READINESS_BITS["poison_scan_clean"] if p_ok else 0) | READINESS_BITS["schema_drift_stable"]
+    if auth_m == "none" and not is_repo and alive: r_mask |= READINESS_BITS["zero_auth_instant"]
+    stamp, u64, u64_hex = MgleNnp64Codec.pack(merit_g, guar_g, lat_g, "B" if x402_ok else "A", node_h, "E", "S" if lat_g in ("A", "B") else "D", r_mask, c_mask)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    v_dom = extract_vendor_domain(endpoint)
+    dos = {"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "mgle_nnp_code": stamp, "mgle_nnp_u64_hex": u64_hex, "decoded_switches": MgleNnp64Codec.unpack(u64), "verified_tools": c_tools[:20], "inspected_at_utc": now_iso}
+    return {"agent_id": aid, "name": name, "description": desc[:400], "endpoint": ep, "merit_grade": merit_g, "guarantee_grade": guar_g, "latency_grade": lat_g, "mgle_nnp_stamp": stamp, "mgle_nnp_64bit": u64, "domain_mask": c_mask, "avg_latency_ms": eff, "synaptic_weight": n_wt, "wired_tool_count": len(c_tools), "tool_schema_hash_16": h16, "auth_mode": auth_m, "poison_scan_clean": p_ok, "encounter_count": enc, "room_completions": wins, "room_failures": fails, "dossier_json": dos, "audit_status": st, "last_audited_at": now_iso}
 
 
-    dossier = {
-        "agent_id": agent_id, "vendor_domain": v_dom, "mgle_nnp_code": stamp, "mgle_nnp_u64_hex": u64_hex,
-        "decoded_switches": MgleNnp64Codec.unpack(u64),
-        "live_readiness": {
-            "callable_immediately": bool(r_mask & READINESS_BITS["zero_auth_instant"]),
-            "auth_requirement": auth_mode, "cold_latency_ms": cold_latency_ms, "warm_latency_ms": warm_latency_ms,
-            "observed_rate_limit_rpm": rate_limit_rpm, "x402_micropayment_ready": x402_supported,
-        },
-        "security_and_stability": {
-            "poison_scan_clean": poison_ok, "poison_findings": poison_list,
-            "tool_schema_hash_16": h16, "schema_drift_detected": drifted,
-        },
-        "track_record": {
-            "tenure_tier": tenure, "crawler_encounters": enc,
-            "meeting_room_completions": wins, "meeting_room_failures": fails,
-        },
-        "verified_tools_count": len(c_tools), "verified_tools": c_tools[:25],
-        "inspector_summary": f"{status}: {len(c_tools)} tools on {v_dom}, warm RTT {eff_ms if eff_ms is not None else 'N/A'} ms.",
-        "inspected_at_utc": now_iso,
-    }
-    return {
-        "agent_id": agent_id, "name": name, "description": description[:400], "endpoint": endpoint,
-        "merit_grade": merit_g, "guarantee_grade": guar_g, "latency_grade": lat_g, "economy_grade": econ_g,
-        "node_honesty": node_h, "neighbor_protocol": "E", "preference_class": pref_g,
-        "mgle_nnp_stamp": stamp, "mgle_nnp_64bit": u64, "domain_mask": cap_mask,
-        "avg_latency_ms": eff_ms, "synaptic_weight": new_wt, "wired_tool_count": len(c_tools),
-        "tool_schema_hash_16": h16, "schema_drift_detected": drifted, "auth_mode": auth_mode,
-        "rate_limit_rpm": rate_limit_rpm, "poison_scan_clean": poison_ok, "encounter_count": enc,
-        "room_completions": wins, "room_failures": fails, "dossier_json": dossier,
-        "audit_status": status, "last_audited_at": now_iso,
-    }
-
-
-
-
-def interrogate_live_endpoint(agent_row: Dict[str, Any], timeout_sec: float = 4.5) -> Dict[str, Any]:
-    aid = str(agent_row.get("agent_id") or agent_row.get("id") or "")
-    name, desc = str(agent_row.get("name") or aid), str(agent_row.get("description") or "")
-    ep = str(agent_row.get("endpoint") or "").strip()
-    if not ep.lower().startswith(("http://", "https://")) or "github.com/" in ep.lower() or "gitlab.com/" in ep.lower():
-        return build_agent_record_and_dossier(aid, name, desc, ep, False, None, None, [], "local_stdio_code", prev_record=agent_row)
-
-
+def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 4.0) -> Dict[str, Any]:
+    aid, nm, ds, ep = str(row.get("agent_id") or row.get("id") or ""), str(row.get("name") or ""), str(row.get("description") or ""), str(row.get("endpoint") or "").strip()
+    if not ep.lower().startswith(("http://", "https://")) or any(h in ep.lower() for h in ("github.com/", "gitlab.com/", "npmjs.com/", "pypi.org/")):
+        return build_agent_record_and_dossier(aid, nm or aid, ds, ep, False, None, None, [], "local_stdio_code", prev_record=row)
     ctx = ssl.create_default_context()
-    hdrs = {
-        "Content-Type": "application/json", "Accept": "application/json, text/event-stream",
-        "User-Agent": f"MglennP-RadialSwitchboard-Auditor/{SPEC_VERSION} (+https://radialswitchboard.com)",
-    }
-    init_b = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "RadialAuditor", "version": SPEC_VERSION}}}).encode("utf-8")
-    cold_ms, warm_ms, alive, rpc_ok, x402_ok = None, None, False, False, False
-    auth_m, rpm, sess = "none", None, None
-
-
+    hdrs = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "mcp-protocol-version": "2026-07-28", "User-Agent": f"MglennP-RadialScout/{SPEC_VERSION}"}
+    ib = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "RadialScout", "version": SPEC_VERSION}}}).encode()
+    cold, warm, alive, auth_m, x402_ok, sess, tools = None, None, False, "none", False, None, []
     t0 = time.perf_counter()
     try:
-        with urllib.request.urlopen(urllib.request.Request(ep, data=init_b, headers=hdrs, method="POST"), timeout=timeout_sec, context=ctx) as r:
-            cold_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            alive = 200 <= r.status < 500
-            sess = r.headers.get("Mcp-Session-Id") or r.headers.get("mcp-session-id")
-            rl = r.headers.get("X-RateLimit-Limit") or r.headers.get("RateLimit-Limit")
-            if rl and str(rl).isdigit():
-                rpm = int(rl)
-            raw = r.read(65536).decode("utf-8", errors="replace")
-            rpc_ok = ('"jsonrpc"' in raw or '"result"' in raw)
+        with urllib.request.urlopen(urllib.request.Request(ep, data=ib, headers=hdrs, method="POST"), timeout=timeout_sec, context=ctx) as r:
+            cold, alive, sess = round((time.perf_counter() - t0) * 1000.0, 2), (200 <= r.status < 400), (r.headers.get("Mcp-Session-Id") or r.headers.get("mcp-session-id"))
     except urllib.error.HTTPError as e:
-        cold_ms = round((time.perf_counter() - t0) * 1000.0, 2)
-        if e.code in (401, 403):
-            alive, auth_m = True, "bearer_or_oauth_required"
-        elif e.code == 402:
-            alive, auth_m, x402_ok = True, "x402_micropayment", True
-        elif e.code in (400, 405, 406, 422):
-            alive = True
-    except Exception:
-        alive = False
-
-
-    tools: List[Dict[str, Any]] = []
-    if alive and rpc_ok:
+        cold = round((time.perf_counter() - t0) * 1000.0, 2)
+        if e.code in (401, 403): alive, auth_m = True, "bearer_or_oauth_required"
+        elif e.code == 402: alive, auth_m, x402_ok = True, "x402_micropayment", True
+        elif e.code in (400, 405, 406): alive = True
+    except Exception: alive = False
+    if alive and auth_m == "none":
         wh = dict(hdrs)
-        if sess:
-            wh["Mcp-Session-Id"] = sess
-        tb = json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}).encode("utf-8")
+        if sess: wh["Mcp-Session-Id"] = sess
         t1 = time.perf_counter()
         try:
-            with urllib.request.urlopen(urllib.request.Request(ep, data=tb, headers=wh, method="POST"), timeout=timeout_sec, context=ctx) as r2:
-                warm_ms = round((time.perf_counter() - t1) * 1000.0, 2)
-                p_str = r2.read(131072).decode("utf-8", errors="replace").strip()
-                if not p_str.startswith("{"):
-                    for ln in p_str.splitlines():
-                        if ln.strip().startswith("data:") and "{" in ln:
-                            p_str = ln.split("data:", 1)[1].strip()
-                            break
-                res_o = (json.loads(p_str) or {}).get("result")
-                if isinstance(res_o, dict) and isinstance(res_o.get("tools"), list):
-                    tools = res_o["tools"]
-        except Exception:
-            pass
-    return build_agent_record_and_dossier(aid, name, desc, ep, alive, cold_ms, warm_ms, tools, auth_m, rpm, x402_ok, agent_row)
+            with urllib.request.urlopen(urllib.request.Request(ep, data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}).encode(), headers=wh, method="POST"), timeout=timeout_sec, context=ctx) as r2:
+                warm = round((time.perf_counter() - t1) * 1000.0, 2)
+                ps = r2.read(131072).decode("utf-8", errors="replace").strip()
+                if not ps.startswith("{"):
+                    for ln in ps.splitlines():
+                        if ln.strip().startswith("data:") and "{" in ln: ps = ln.split("data:", 1)[1].strip(); break
+                ro = (json.loads(ps) or {}).get("result")
+                if isinstance(ro, dict) and isinstance(ro.get("tools"), list): tools = ro["tools"]
+        except Exception: pass
+    return build_agent_record_and_dossier(aid, nm or aid, ds, ep, alive, cold, warm, tools, auth_m, None, x402_ok, row)
+
+
 class DualLaneGateAndTaxLedger:
     def __init__(self, treasury_address: str = DEFAULT_USDC_TREASURY_ADDRESS) -> None:
         self.treasury_address = treasury_address
         self.free_daily_usage: Dict[str, int] = {}
+        self.minted_starter_passes: Dict[str, Dict[str, Any]] = {}
         self.pass_remaining_credits: Dict[str, int] = {}
         self.used_payment_tx_hashes: set[str] = set()
         self.active_work_challenges: Dict[str, Dict[str, Any]] = {}
-        self.pending_scout_consensus: Dict[str, List[Dict[str, Any]]] = {}
         self.tax_revenue_ledger: List[Dict[str, Any]] = []
 
 
-    def _sign_token(self, lane: str, nonce: str, initial_credits: int, exp_unix: int) -> str:
-        msg = f"rs3.{lane}.{nonce}.{initial_credits}.{exp_unix}".encode("utf-8")
-        sig = hmac.new(HMAC_SECRET_KEY, msg, hashlib.sha256).hexdigest()[:24]
-        return f"rs3.{lane}.{nonce}.{initial_credits}.{exp_unix}.{sig}"
+    def _sign(self, lane: str, nonce: str, cred: int, exp: int) -> str:
+        sig = hmac.new(HMAC_SECRET_KEY, f"rs3.{lane}.{nonce}.{cred}.{exp}".encode(), hashlib.sha256).hexdigest()[:24]
+        return f"rs3.{lane}.{nonce}.{cred}.{exp}.{sig}"
+
+
+    def mint_daily_starter_pass(self, fp: str, label: str = "") -> Tuple[Dict[str, Any], bool]:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        dk = f"{now.strftime('%Y-%m-%d')}:{fp}"
+        ex = self.minted_starter_passes.get(dk)
+        if ex and int(ex["expires_unix"]) > int(time.time()):
+            return {"status": "EXISTING_DAILY_STARTER_KEY", "pass_token": ex["pass_token"], "header_name": "X-Radial-Pass", "daily_credits": FREE_DAILY_STARTER_CALLS, "remaining_credits": self.pass_remaining_credits.get(ex["nonce"], FREE_DAILY_STARTER_CALLS), "expires_unix": ex["expires_unix"]}, False
+        exp = max(int(time.time()) + 3600, int((now + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()))
+        rem = max(1, FREE_DAILY_STARTER_CALLS - self.free_daily_usage.get(dk, 0))
+        nc = secrets.token_hex(8); self.pass_remaining_credits[nc] = rem; tok = self._sign("starter", nc, rem, exp)
+        self.minted_starter_passes[dk] = {"nonce": nc, "pass_token": tok, "expires_unix": exp}
+        return {"status": "STARTER_KEY_MINTED", "pass_token": tok, "header_name": "X-Radial-Pass", "daily_credits": FREE_DAILY_STARTER_CALLS, "remaining_credits": rem, "expires_unix": exp}, True
 
 
     def verify_and_consume_pass(self, token: str) -> Tuple[bool, str, int]:
-        parts = (token or "").strip().split(".")
-        if len(parts) != 6 or parts[0] != "rs3":
-            return False, "INVALID_PASS_FORMAT", 0
-        _, lane, nonce, init_s, exp_s, sig = parts
-        try:
-            init_c, exp_u = int(init_s), int(exp_s)
-        except ValueError:
-            return False, "CORRUPT_PASS_FIELDS", 0
-        if int(time.time()) > exp_u:
-            return False, "PASS_EXPIRED", 0
-        if not hmac.compare_digest(sig, self._sign_token(lane, nonce, init_c, exp_u).split(".")[-1]):
-            return False, "INVALID_HMAC_SIGNATURE", 0
-        rem = self.pass_remaining_credits.get(nonce, init_c)
-        if rem <= 0:
-            return False, "PASS_DEPLETED", 0
-        self.pass_remaining_credits[nonce] = rem - 1
+        pts = (token or "").strip().split(".")
+        if len(pts) != 6 or pts[0] != "rs3": return False, "INVALID_PASS", 0
+        _, lane, nc, ic_s, ex_s, sig = pts
+        try: ic, ex = int(ic_s), int(ex_s)
+        except ValueError: return False, "CORRUPT", 0
+        if int(time.time()) > ex or not hmac.compare_digest(sig, self._sign(lane, nc, ic, ex).split(".")[-1]): return False, "EXPIRED_OR_BAD_SIG", 0
+        rem = self.pass_remaining_credits.get(nc, ic)
+        if rem <= 0: return False, "DEPLETED", 0
+        self.pass_remaining_credits[nc] = rem - 1
         return True, f"OK_{lane.upper()}_PASS", rem - 1
 
 
-    def check_or_issue_402_challenge(self, caller_fingerprint: str, pass_token: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
-        if pass_token:
-            ok, reason, rem = self.verify_and_consume_pass(pass_token)
-            if ok:
-                return True, {"access": reason, "remaining_handshakes": rem}
-        day_k = f"{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')}:{caller_fingerprint}"
-        used = self.free_daily_usage.get(day_k, 0)
+    def check_or_issue_402_challenge(self, fp: str, tok: Optional[str] = None) -> Tuple[bool, Dict[str, Any]]:
+        if tok:
+            ok, rsn, rem = self.verify_and_consume_pass(tok)
+            if ok: return True, {"access": rsn, "remaining_handshakes": rem}
+        dk = f"{datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')}:{fp}"
+        used = self.free_daily_usage.get(dk, 0)
         if used < FREE_DAILY_STARTER_CALLS:
-            self.free_daily_usage[day_k] = used + 1
+            self.free_daily_usage[dk] = used + 1
             return True, {"access": "FREE_STARTER_ALLOWANCE", "remaining_free_today": FREE_DAILY_STARTER_CALLS - (used + 1)}
-        return False, {
-            "http_status": 402,
-            "error": "PAYMENT_OR_SCOUT_WORK_REQUIRED",
-            "lane_a_x402_usdc": {
-                "protocol": "x402-v2", "network": BASE_MAINNET_CHAIN_ID, "asset_contract": BASE_USDC_CONTRACT,
-                "asset_symbol": "USDC", "amount_usdc": CASH_PASS_PRICE_USDC, "pay_to_address": self.treasury_address,
-                "grants_handshakes": CASH_PASS_CREDITS, "effective_rate_usd_per_handshake": 0.0001,
-            },
-            "lane_b_compute_scout_duty": {
-                "claim_endpoint": "/v1/work/claim", "submit_endpoint": "/v1/work/submit",
-                "targets_per_assignment": WORK_ASSIGNMENT_SIZE, "grants_handshakes": WORK_PASS_CREDITS,
-                "ttl_seconds": WORK_PASS_TTL_SECONDS, "monetary_value_usd": 0.00, "transferable": False,
-            },
-        }
+        return False, {"http_status": 402, "error": "PAYMENT_OR_SCOUT_WORK_REQUIRED", "lane_a_x402_usdc": {"network": BASE_MAINNET_CHAIN_ID, "asset_contract": BASE_USDC_CONTRACT, "amount_usdc": CASH_PASS_PRICE_USDC, "pay_to_address": self.treasury_address, "grants_handshakes": CASH_PASS_CREDITS}, "lane_b_compute_scout_duty": {"claim_endpoint": "/v1/work/claim", "submit_endpoint": "/v1/work/submit", "grants_handshakes": WORK_PASS_CREDITS}}
 
 
-    def settle_x402_usdc_payment(self, tx_hash: str, amount_usdc: float, payer_wallet: str) -> Dict[str, Any]:
-        clean_tx = (tx_hash or "").strip().lower()
-        if not clean_tx.startswith("0x") or len(clean_tx) < 10:
-            raise ValueError("Invalid Base transaction hash.")
-        if clean_tx in self.used_payment_tx_hashes:
-            raise ValueError("Replay blocked: transaction hash already redeemed.")
-        if amount_usdc < float(CASH_PASS_PRICE_USDC):
-            raise ValueError(f"Minimum x402 settlement is {CASH_PASS_PRICE_USDC} USDC.")
-        self.used_payment_tx_hashes.add(clean_tx)
-        credits = max(1, int(round(amount_usdc / float(CASH_PASS_PRICE_USDC)))) * CASH_PASS_CREDITS
-        nonce, exp_u = secrets.token_hex(8), int(time.time()) + CASH_PASS_TTL_SECONDS
-        self.pass_remaining_credits[nonce] = credits
-        token = self._sign_token("cash", nonce, credits, exp_u)
-        fmv = round(amount_usdc, 6)
-        entry = {
-            "entry_id": f"TAX-{secrets.token_hex(6).upper()}",
-            "received_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "network": BASE_MAINNET_CHAIN_ID, "treasury_wallet": self.treasury_address,
-            "payer_wallet": payer_wallet, "tx_hash": clean_tx,
-            "gross_usdc_received": fmv, "fair_market_value_usd": fmv,
-            "irs_schedule_c_classification": "Ordinary Business Service Income (USDC at Receipt FMV)",
-            "tax_reserve_30pct_usd": round(fmv * TAX_RESERVE_RATIO, 6),
-            "operating_cash_60pct_usd": round(fmv * OPERATING_CASH_RATIO, 6),
-            "post_tax_treasury_slice_10pct_usd": round(fmv * POST_TAX_TREASURY_SLICE_RATIO, 6),
-            "handshakes_issued": credits,
-        }
-        self.tax_revenue_ledger.append(entry)
-        sb_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        sb_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
-        if sb_url and sb_key:
+    def settle_x402_usdc_payment(self, tx_hash: str, amount_usdc: float, payer_wallet: str, allow_offline_self_test: bool = False) -> Dict[str, Any]:
+        tx = (tx_hash or "").strip().lower()
+        if not tx.startswith("0x") or len(tx) != 66 or tx in self.used_payment_tx_hashes: raise ValueError("Invalid or replayed Base tx_hash.")
+        if not allow_offline_self_test:
+            rpc = os.environ.get("BASE_MAINNET_RPC_URL", "https://mainnet.base.org")
             try:
-                base = sb_url if sb_url.endswith("/rest/v1") else f"{sb_url}/rest/v1"
-                req = urllib.request.Request(f"{base}/radial_tax_revenue_ledger", data=json.dumps(entry).encode("utf-8"), headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}", "Content-Type": "application/json", "Prefer": "return=minimal"}, method="POST")
-                urllib.request.urlopen(req, timeout=8).close()
-            except Exception:
-                pass
-        return {"status": "SETTLED_X402_PASS_ISSUED", "pass_token": token, "handshakes_granted": credits, "expires_unix": exp_u, "tax_ledger_receipt": entry}
-
-
-    def issue_scout_work_assignment(self, candidate_endpoints: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
-        aid = f"WORK-{secrets.token_hex(6).upper()}"
-        c_prop = f"canary_nonce_{secrets.token_hex(4)}"
-        c_tools = [{"name": "radial_canary_ping", "description": "Canary", "inputSchema": {"type": "object", "properties": {c_prop: {"type": "string"}}, "required": [c_prop]}}]
-        _, exp_hash, _ = extract_capabilities_and_hash("radial canary", c_tools)
-        picks = list(candidate_endpoints[:3])
-        while len(picks) < 3:
-            i = len(picks) + 1
-            picks.append({"agent_id": f"mcp://queue-target-{i}", "endpoint": f"https://radialswitchboard.com/v1/mock-target/{i}"})
-        c_slot = {"agent_id": f"mcp://node-verify-{secrets.token_hex(3)}", "endpoint": f"https://radialswitchboard.com/v1/canary/{c_prop}"}
-        targets = [{"agent_id": r["agent_id"], "endpoint": r["endpoint"]} for r in picks]
-        targets.insert(random.randint(0, len(targets)), c_slot)
-        self.active_work_challenges[aid] = {"created_unix": int(time.time()), "canary_agent_id": c_slot["agent_id"], "expected_canary_hash_16": exp_hash, "targets": targets}
-        return {"assignment_id": aid, "targets": targets, "expires_in_seconds": 300}
-
-
-    def verify_scout_work_submission(self, assignment_id: str, results: Sequence[Dict[str, Any]], scout_region_hint: str = "unknown") -> Dict[str, Any]:
-        ch = self.active_work_challenges.pop(assignment_id, None)
-        if not ch or (int(time.time()) - int(ch["created_unix"]) > 300):
-            return {"status": "REJECTED", "reason": "UNKNOWN_OR_EXPIRED_ASSIGNMENT"}
-        by_id = {str(r.get("agent_id")): r for r in results if isinstance(r, dict)}
-        if len(by_id) < len(ch["targets"]) or ch["canary_agent_id"] not in by_id:
-            return {"status": "REJECTED", "reason": "INCOMPLETE_TARGET_RESULTS"}
-        sub_h = str(by_id[ch["canary_agent_id"]].get("tool_schema_hash_16") or "").strip().lower()
-        if not hmac.compare_digest(sub_h, ch["expected_canary_hash_16"]):
-            return {"status": "REJECTED_CANARY_SPOOF_CAUGHT", "reason": "Canary tool-schema hash mismatch."}
-        confirmed: List[str] = []
-        for k, obs in by_id.items():
-            if k == ch["canary_agent_id"]:
-                continue
-            b = self.pending_scout_consensus.setdefault(k, [])
-            b.append({"tool_schema_hash_16": str(obs.get("tool_schema_hash_16") or ""), "region": scout_region_hint})
-            if len(b) >= 2 and b[-1]["tool_schema_hash_16"] == b[-2]["tool_schema_hash_16"]:
-                confirmed.append(k)
-        nonce, exp_u = secrets.token_hex(8), int(time.time()) + WORK_PASS_TTL_SECONDS
-        self.pass_remaining_credits[nonce] = WORK_PASS_CREDITS
-        return {
-            "status": "VERIFIED_WORK_PASS_ISSUED", "pass_token": self._sign_token("work", nonce, WORK_PASS_CREDITS, exp_u),
-            "handshakes_granted": WORK_PASS_CREDITS, "expires_unix": exp_u,
-            "monetary_value_usd": 0.00, "transferable": False, "two_scout_consensus_confirmed": confirmed,
-        }
-
-
-
-
-class RadialMeetingRoom:
-    def __init__(self, gate: DualLaneGateAndTaxLedger, pool_by_id: Dict[str, Dict[str, Any]]) -> None:
-        self.gate, self.pool_by_id = gate, pool_by_id
-        self.provider_reciprocity_tallies: Dict[str, int] = {}
-
-
-    def execute_handshake(
-        self, caller_fingerprint: str, target_agent_id: str, jsonrpc_payload: Dict[str, Any],
-        pass_token: Optional[str] = None, simulated_worker_handler: Optional[Any] = None, timeout_sec: float = 8.0,
-    ) -> Dict[str, Any]:
-        allowed, gate_info = self.gate.check_or_issue_402_challenge(caller_fingerprint, pass_token)
-        if not allowed:
-            return gate_info
-        worker = self.pool_by_id.get(target_agent_id)
-        if not worker:
-            return {"http_status": 404, "error": f"Unknown target agent: {target_agent_id}"}
-        t0, ok = time.perf_counter(), False
-        try:
-            if simulated_worker_handler is not None:
-                w_resp = simulated_worker_handler(jsonrpc_payload)
-            else:
-                req = urllib.request.Request(str(worker["endpoint"]), data=json.dumps(jsonrpc_payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
-                with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-                    w_resp = json.loads(resp.read(262144).decode("utf-8", errors="replace"))
-            ms = round((time.perf_counter() - t0) * 1000.0, 2)
-            ok = isinstance(w_resp, dict) and "error" not in w_resp
-        except Exception as exc:
-            ms, w_resp = round((time.perf_counter() - t0) * 1000.0, 2), {"error": str(exc)}
-
-
-        recip = None
-        if ok:
-            worker["room_completions"] = int(worker.get("room_completions") or 0) + 1
-            worker["synaptic_weight"] = round(min(0.99, float(worker.get("synaptic_weight") or 0.80) + 0.03), 4)
-            tally = self.provider_reciprocity_tallies.get(target_agent_id, 0) + 1
-            self.provider_reciprocity_tallies[target_agent_id] = tally
-            if tally % 5 == 0:
-                n, eu = secrets.token_hex(8), int(time.time()) + WORK_PASS_TTL_SECONDS
-                self.gate.pass_remaining_credits[n] = WORK_PASS_CREDITS
-                recip = self.gate._sign_token("reciprocity", n, WORK_PASS_CREDITS, eu)
+                with urllib.request.urlopen(urllib.request.Request(rpc, data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_getTransactionReceipt", "params": [tx]}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=8) as r:
+                    rec = (json.loads(r.read().decode()) or {}).get("result")
+            except Exception as e:
+                raise ValueError(f"Base RPC error: {e}")
+            if not isinstance(rec, dict) or str(rec.get("status", "")).lower() != "0x1": raise ValueError("Tx not confirmed on Base Mainnet.")
+            tsig, dest, paid = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x" + self.treasury_address.lower().replace("0x", "").rjust(64, "0"), 0.0
+            for lg in (rec.get("logs") or []):
+                if isinstance(lg, dict) and str(lg.get("address") or "").lower() == BASE_USDC_CONTRACT.lower():
+                    tp = [str(t).lower() for t in (lg.get("topics") or [])]
+                    if len(tp) >= 3 and tp[0] == tsig and tp[2] == dest: paid += int(str(lg.get("data") or "0x0"), 16) / 1_000_000.0
+            if paid + 1e-9 < float(CASH_PASS_PRICE_USDC): raise ValueError("No matching USDC transfer to treasury.")
+            eff = paid
         else:
-            worker["room_failures"] = int(worker.get("room_failures") or 0) + 1
-            worker["synaptic_weight"] = round(max(0.10, float(worker.get("synaptic_weight") or 0.80) - 0.15), 4)
+            eff = max(float(CASH_PASS_PRICE_USDC), float(amount_usdc or 0.0))
+        self.used_payment_tx_hashes.add(tx)
+        cred, nc, exp = max(1, int(round(eff / float(CASH_PASS_PRICE_USDC)))) * CASH_PASS_CREDITS, secrets.token_hex(8), int(time.time()) + CASH_PASS_TTL_SECONDS
+        self.pass_remaining_credits[nc] = cred
+        entry = {"entry_id": f"TAX-{secrets.token_hex(5).upper()}", "received_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(), "tx_hash": tx, "payer_wallet": payer_wallet, "gross_usdc_received": round(eff, 6), "tax_reserve_30pct_usd": round(eff * TAX_RESERVE_RATIO, 6), "operating_cash_60pct_usd": round(eff * OPERATING_CASH_RATIO, 6), "post_tax_treasury_slice_10pct_usd": round(eff * POST_TAX_TREASURY_SLICE_RATIO, 6), "handshakes_issued": cred}
+        self.tax_revenue_ledger.append(entry)
+        return {"status": "SETTLED_X402_PASS_ISSUED", "pass_token": self._sign("cash", nc, cred, exp), "handshakes_granted": cred, "expires_unix": exp, "tax_ledger_receipt": entry}
 
 
-        refreshed = build_agent_record_and_dossier(
-            worker["agent_id"], worker["name"], worker.get("description", ""), worker["endpoint"],
-            ok or (worker.get("guarantee_grade") in ("A", "B")), worker.get("avg_latency_ms"),
-            ms if ok else worker.get("avg_latency_ms"), [], worker.get("auth_mode", "none"),
-            worker.get("rate_limit_rpm"), prev_record=worker,
-        )
-        self.pool_by_id[target_agent_id] = refreshed
-        return {
-            "http_status": 200 if ok else 502,
-            "room_witness_verdict": "DELIVERY_VERIFIED" if ok else "WORKER_CONTRACT_FAILURE",
-            "measured_room_ms": ms, "updated_worker_mgle_nnp": refreshed["mgle_nnp_stamp"],
-            "caller_gate": gate_info, "provider_reciprocity_pass_awarded": recip, "worker_response": w_resp,
-        }
+    def issue_scout_work_assignment(self, cands: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+        aid, cp = f"WORK-{secrets.token_hex(5).upper()}", f"canary_nonce_{secrets.token_hex(4)}"
+        _, exp_h, _ = extract_capabilities_and_hash("canary", [{"name": "radial_canary_ping", "description": "Canary", "inputSchema": {"type": "object", "properties": {cp: {"type": "string"}}, "required": [cp]}}])
+        picks = [{"agent_id": r["agent_id"], "endpoint": r["endpoint"]} for r in list(cands)[:3]]
+        while len(picks) < 3: picks.append({"agent_id": f"mcp://queue-{len(picks)+1}", "endpoint": f"https://radialswitchboard.com/v1/mock/{len(picks)+1}"})
+        cs = {"agent_id": f"mcp://canary-{secrets.token_hex(3)}", "endpoint": f"https://radialswitchboard.com/v1/canary/{cp}"}
+        picks.insert(random.randint(0, len(picks)), cs)
+        self.active_work_challenges[aid] = {"created_unix": int(time.time()), "canary_agent_id": cs["agent_id"], "expected_canary_hash_16": exp_h, "targets": picks}
+        return {"assignment_id": aid, "targets": picks, "expires_in_seconds": 300}
 
 
-
-
-def crawl_and_interrogate_batch_to_supabase(query_str: str = "topic:mcp-server", page: int = 1, per_page: int = 25) -> Dict[str, Any]:
-    hdrs = {"Accept": "application/vnd.github+json", "User-Agent": f"MglennP-RadialSwitchboard-Crawler/{SPEC_VERSION}"}
-    tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
-    if tok:
-        hdrs["Authorization"] = f"Bearer {tok}"
-    url = f"https://api.github.com/search/repositories?q={urllib.parse.quote(query_str)}&sort=updated&order=desc&per_page={per_page}&page={page}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers=hdrs), timeout=15) as r:
-        items = (json.loads(r.read().decode("utf-8")) or {}).get("items") or []
-    cands = [
-        {
-            "agent_id": f"gh://{(it.get('full_name') or it.get('name')).lower()}",
-            "name": it.get("full_name") or it.get("name"),
-            "description": (it.get("description") or "Autonomous MCP/A2A repository")[:400],
-            "endpoint": (it.get("homepage") or "").strip() if str(it.get("homepage") or "").startswith("https://") else (it.get("html_url") or ""),
-        }
-        for it in items if (it.get("full_name") or it.get("name"))
-    ]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=25) as ex:
-        audited = list(ex.map(interrogate_live_endpoint, cands))
-    sb_url, sb_key, upserted = os.environ.get("SUPABASE_URL", "").rstrip("/"), (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or ""), 0
-    if sb_url and sb_key and audited:
-        base = sb_url if sb_url.endswith("/rest/v1") else f"{sb_url}/rest/v1"
-        try:
-            req = urllib.request.Request(f"{base}/radial_agent_phonebook?on_conflict=agent_id", data=json.dumps(audited).encode("utf-8"), headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}, method="POST")
-            with urllib.request.urlopen(req, timeout=20) as sr:
-                if sr.status in (200, 201, 204):
-                    upserted = len(audited)
-        except Exception:
-            pass
-    return {"spec_version": SPEC_VERSION, "target_table": "radial_agent_phonebook", "audited_count": len(audited), "upserted_to_supabase": upserted, "records": audited}
-
-
-
-
-DEFAULT_SEED_SPECS: Tuple[Tuple[str, str, str, str, str, float, int], ...] = (
-    ("mcp://neon-fast-sql", "Neon Serverless Postgres Planner", "https://mcp.neon.tech/sse", "run_readonly_sql", "sql_query", 68.0, 19),
-    ("mcp://supabase-pg", "Supabase PostgREST & RLS Auditor", "https://mcp.supabase.com/rpc", "inspect_pg_rls", "table_name", 82.0, 16),
-    ("mcp://turso-libsql", "Turso Edge LibSQL Engine", "https://edge.turso.tech/mcp", "exec_libsql", "statements", 41.0, 14),
-    ("mcp://motherduck-olap", "MotherDuck DuckDB Parquet Engine", "https://api.motherduck.com/mcp", "duck_olap", "analytical_sql", 135.0, 12),
-    ("mcp://clickhouse-col", "ClickHouse Columnar SQL Node", "https://mcp.clickhouse.cloud/rpc", "query_columnar_sql", "ch_query", 94.0, 11),
-    ("mcp://cockroach-tx", "CockroachDB Serializable Verifier", "https://mcp.cockroachlabs.cloud/sse", "verify_serializable_tx", "tx_sql", 148.0, 9),
-    ("mcp://planetscale-vt", "PlanetScale Vitess MySQL Planner", "https://mcp.planetscale.com/rpc", "explain_vitess_sql", "mysql_stmt", 112.0, 8),
-    ("mcp://timescale-ts", "TimescaleDB Time-Series SQL Node", "https://mcp.timescale.com/sse", "rollup_hypertable_sql", "bucket_sql", 162.0, 7),
-    ("mcp://tembo-vec", "Tembo Hybrid SQL + pgvector Node", "https://mcp.tembo.io/rpc", "hybrid_sql_search", "join_query", 175.0, 6),
-    ("mcp://crunchy-pg", "Crunchy Bridge Safe SQL Sandbox", "https://mcp.crunchybridge.com/rpc", "sandbox_pg_explain", "explain_sql", 190.0, 5),
-    ("mcp://e2b-firecracker-py", "E2B Firecracker MicroVM Python", "https://mcp.e2b.dev/sse", "execute_python", "code", 88.0, 22),
-    ("mcp://semgrep-ast", "Semgrep AST Security Auditor", "https://mcp.semgrep.dev/rpc", "scan_security_ast", "source_code", 76.0, 18),
-    ("mcp://constellation-sec", "Constellation SEC EDGAR Finance Node", "https://mcp.constellationfinance.ai/sse", "extract_sec_xbrl", "ticker", 34.0, 28),
-    ("mcp://base-usdc-x402", "Base Mainnet USDC & x402 Verifier", "https://mcp.base-rpc-verify.org/rpc", "verify_usdc_x402", "tx_hash", 61.0, 19),
-)
-
-
+    def verify_scout_work_submission(self, aid: str, results: Sequence[Dict[str, Any]], region: str = "external") -> Dict[str, Any]:
+        ch = self.active_work_challenges.pop(aid, None)
+        if not ch or int(time.time()) - int(ch["created_unix"]) > 300: return {"status": "REJECTED", "reason": "EXPIRED"}
+        by_id = {str(r.get("agent_id")): r for r in results if isinstance(r, dict)}
+        if ch["canary_agent_id"] not in by_id or not hmac.compare_digest(str(by_id[ch["canary_agent_id"]].get("tool_schema_hash_16") or "").lower(), ch["expected_canary_hash_16"]):
+            return {"status": "REJECTED_CANARY_MISMATCH"}
+        nc, exp = secrets.token_hex(8), int(time.time()) + WORK_PASS_TTL_SECONDS
+        self.pass_remaining_credits[nc] = WORK_PASS_CREDITS
+        return {"status": "VERIFIED_WORK_PASS_ISSUED", "pass_token": self._sign("work", nc, WORK_PASS_CREDITS, exp), "handshakes_granted": WORK_PASS_CREDITS, "expires_unix": exp, "monetary_value_usd": 0.0}
 
 
 class StandaloneSwitchboardRuntime:
-    def __init__(self, hydrate_external: bool = True) -> None:
+    def __init__(self, hydrate_external: bool = True, start_background_scouts: bool = True) -> None:
+        self.hydrate_external = hydrate_external
         self.pool_by_id: Dict[str, Dict[str, Any]] = {}
         self.gate = DualLaneGateAndTaxLedger(DEFAULT_USDC_TREASURY_ADDRESS)
-        self.room = RadialMeetingRoom(self.gate, self.pool_by_id)
-        self.crawl_cursor = {"query_index": 0, "page": 1, "total_runs": 1}
-        self._seed_verified_baseline()
+        self.appeals_log: List[Dict[str, Any]] = []
+        self.redeemed_tickets: set[str] = set()
+        self._lock = threading.Lock()
+        self.crawl_cursor: Dict[str, Any] = {"registry_cursor": "", "gh_page": 1}
+        self.telemetry: Dict[str, Any] = {"total_external_uses": 0, "external_agent_calls": 0, "mcp_jsonrpc_calls": 0, "rest_matchmake_calls": 0, "ai_beacon_discovery_pulls": 0, "room_handshakes_completed": 0, "starter_keys_minted": 0, "outcome_reports_verified": 0, "scout_sweeps_completed": 0, "last_scout_sweep_utc": None, "scout_currently_running": False}
         if hydrate_external:
-            self._hydrate_from_supabase_and_static()
+            self._hydrate()
+            self._load_telemetry()
+        if hydrate_external and start_background_scouts:
+            threading.Thread(target=self._daemon, daemon=True).start()
 
 
-    def _seed_verified_baseline(self) -> None:
-        for aid, nm, ep, tn, pn, wms, wins in DEFAULT_SEED_SPECS:
-            rec = build_agent_record_and_dossier(
-                aid, nm, f"{nm} ({tn})", ep, True, wms + 75.0, wms,
-                [{"name": tn, "description": nm, "inputSchema": {"type": "object", "properties": {pn: {"type": "string"}}, "required": [pn]}}],
-                prev_record={"encounter_count": 35, "room_completions": wins, "synaptic_weight": 0.92},
-            )
-            self.pool_by_id[aid] = rec
+    def _recompute(self) -> int:
+        self.telemetry["total_external_uses"] = int(self.telemetry.get("external_agent_calls") or 0) + int(self.telemetry.get("ai_beacon_discovery_pulls") or 0) + int(self.telemetry.get("room_handshakes_completed") or 0)
+        return self.telemetry["total_external_uses"]
 
 
-    def _normalize_legacy_row(self, r: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        aid = str(r.get("agent_slug") or r.get("agent_id") or r.get("slug") or r.get("id") or "").strip()
-        if not aid:
-            return None
-        if isinstance(r.get("dossier_json"), dict) and r["dossier_json"] and r.get("mgle_nnp_64bit"):
-            return r
-        ep = str(r.get("endpoint") or r.get("endpoint_url") or r.get("url") or r.get("repo_url") or "").strip()
-        g = str(r.get("guarantee_grade") or r.get("grade") or "B")[:1].upper()
-        alive = g in ("A", "B")
-        lat = r.get("avg_latency_ms") or r.get("latency_ms")
-        eff_lat = float(lat) if isinstance(lat, (int, float)) else (140.0 if alive else None)
-        rec = build_agent_record_and_dossier(
-            aid, str(r.get("name") or r.get("display_name") or r.get("agent_name") or aid),
-            str(r.get("description") or r.get("constructive_status_note") or ""), ep, alive, eff_lat, eff_lat, [],
-            auth_mode=str(r.get("auth_mode") or ("none" if alive else "local_stdio_code")),
-            prev_record=r,
-        )
-        if g in ("D", "E", "F"):
-            rec["guarantee_grade"] = g
-        return rec
+    def record_event(self, field: str, ext_call: bool = False) -> None:
+        with self._lock:
+            self.telemetry[field] = int(self.telemetry.get(field) or 0) + 1
+            if ext_call: self.telemetry["external_agent_calls"] = int(self.telemetry.get("external_agent_calls") or 0) + 1
+            self._recompute()
+        if self.hydrate_external: threading.Thread(target=self._save_telemetry, daemon=True).start()
 
 
-    def _discover_supabase_creds(self) -> Tuple[str, str]:
-        sb_url = (
-            os.environ.get("SUPABASE_URL")
-            or os.environ.get("RADIAL_SUPABASE_URL")
-            or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-            or ""
-        ).strip().rstrip("/")
-        sb_key = (
-            os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-            or os.environ.get("SUPABASE_SERVICE_KEY")
-            or os.environ.get("RADIAL_SUPABASE_KEY")
-            or os.environ.get("SUPABASE_KEY")
-            or os.environ.get("SUPABASE_ANON_KEY")
-            or ""
-        ).strip()
-        if sb_url and sb_key:
-            return sb_url, sb_key
-        legacy_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "switchboard_api.py")
-        if os.path.isfile(legacy_py):
+    def _sb_creds(self) -> Tuple[str, str]:
+        u = (os.environ.get("SUPABASE_URL") or os.environ.get("RADIAL_SUPABASE_URL") or "").strip().rstrip("/")
+        k = (os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY") or "").strip()
+        return u, k
+
+
+    def _load_telemetry(self) -> None:
+        ks = ("external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed")
+        if os.path.isfile(TELEMETRY_LOCAL_PATH):
             try:
-                src = open(legacy_py, "r", encoding="utf-8", errors="ignore").read()
-                if not sb_url:
-                    m_u = re.search(r"https://[a-z0-9]+\.supabase\.co", src)
-                    if m_u:
-                        sb_url = m_u.group(0)
-                if not sb_key:
-                    m_k = re.search(r"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", src)
-                    if m_k:
-                        sb_key = m_k.group(0)
-            except Exception:
-                pass
-        return sb_url, sb_key
+                loc = json.loads(open(TELEMETRY_LOCAL_PATH).read())
+                for k in ks:
+                    if isinstance(loc.get(k), int) and loc[k] > self.telemetry.get(k, 0): self.telemetry[k] = loc[k]
+            except Exception: pass
+        u, k = self._sb_creds()
+        if u and k:
+            try:
+                with urllib.request.urlopen(urllib.request.Request(f"{u}/rest/v1/radial_crawler_state?source_key=eq.{TELEMETRY_SUPABASE_KEY}&select=*", headers={"apikey": k, "Authorization": f"Bearer {k}"}), timeout=8) as r:
+                    rows = json.loads(r.read().decode())
+                if rows and str(rows[0].get("last_cursor") or "").startswith("{"):
+                    rem = json.loads(rows[0]["last_cursor"])
+                    for kx in ks:
+                        if isinstance(rem.get(kx), int) and rem[kx] > self.telemetry.get(kx, 0): self.telemetry[kx] = rem[kx]
+            except Exception: pass
+        self._recompute()
 
 
-    def _hydrate_from_supabase_and_static(self) -> None:
-        base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-        for rel in (("static", "permanent_crawled_agents.json"), ("radial_synapse_directory", "agent_phonebook_index.json")):
-            seed_path = os.path.join(base_dir, *rel)
-            if os.path.isfile(seed_path):
-                try:
-                    raw_seed = json.loads(open(seed_path, "r", encoding="utf-8").read())
-                    items = (raw_seed.get("agents") or {}).values() if isinstance(raw_seed, dict) else (raw_seed if isinstance(raw_seed, list) else [])
-                    for item in items:
-                        if isinstance(item, dict):
-                            norm = self._normalize_legacy_row(item)
-                            if norm and norm["agent_id"] not in self.pool_by_id:
-                                self.pool_by_id[norm["agent_id"]] = norm
-                except Exception:
-                    pass
+    def _save_telemetry(self) -> None:
+        snap = {k: self.telemetry.get(k) for k in ("total_external_uses", "external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed")}
+        try: open(TELEMETRY_LOCAL_PATH, "w").write(json.dumps(snap))
+        except Exception: pass
+        u, k = self._sb_creds()
+        if u and k:
+            row = [{"source_key": TELEMETRY_SUPABASE_KEY, "last_cursor": json.dumps(snap, separators=(",", ":")), "last_page": 1, "total_discovered": int(snap.get("total_external_uses") or 0)}]
+            try: urllib.request.urlopen(urllib.request.Request(f"{u}/rest/v1/radial_crawler_state?on_conflict=source_key", data=json.dumps(row).encode(), headers={"apikey": k, "Authorization": f"Bearer {k}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}, method="POST"), timeout=8).close()
+            except Exception: pass
+# --- RADIAL_PY_CONTINUATION ---
+        u, k = self._sb_creds()
+        if not u or not k: return
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{u}/rest/v1/radial_agent_phonebook?select=*&limit=1000", headers={"apikey": k, "Authorization": f"Bearer {k}"}), timeout=10) as r:
+                for row in (json.loads(r.read().decode()) or []):
+                    aid = str(row.get("agent_id") or "").strip()
+                    if aid and aid not in SYNTHETIC_LEGACY_IDS and row.get("endpoint"):
+                        self.pool_by_id[aid] = row if row.get("mgle_nnp_64bit") else build_agent_record_and_dossier(aid, str(row.get("name") or aid), str(row.get("description") or ""), str(row["endpoint"]), row.get("guarantee_grade") in ("A", "B"), row.get("avg_latency_ms"), row.get("avg_latency_ms"), [], prev_record=row)
+        except Exception: pass
 
 
-        sb_url, sb_key = self._discover_supabase_creds()
-        if not sb_url or not sb_key:
-            return
-        base = sb_url if sb_url.endswith("/rest/v1") else f"{sb_url}/rest/v1"
-        loaded_from_sb: Dict[str, Dict[str, Any]] = {}
-        for tbl in ("radial_agent_phonebook", "radial_synapse_agents", "agent_phonebook"):
-            offset = 0
-            while offset < 10000:
-                try:
-                    url = f"{base}/{tbl}?select=*&limit=1000&offset={offset}"
-                    req = urllib.request.Request(url, headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}", "Accept": "application/json"})
-                    with urllib.request.urlopen(req, timeout=12) as resp:
-                        batch = json.loads(resp.read().decode("utf-8"))
-                    if not isinstance(batch, list) or not batch:
-                        break
-                    for row in batch:
-                        if isinstance(row, dict):
-                            norm = self._normalize_legacy_row(row)
-                            if norm:
-                                loaded_from_sb[norm["agent_id"]] = norm
-                    if len(batch) < 1000:
-                        break
-                    offset += 1000
-                except Exception:
-                    break
-            if len(loaded_from_sb) >= 100:
-                break
-        if len(loaded_from_sb) >= 100:
-            self.pool_by_id = loaded_from_sb
-            for aid, nm, ep, tn, pn, wms, wins in DEFAULT_SEED_SPECS:
-                if aid not in self.pool_by_id:
-                    self.pool_by_id[aid] = build_agent_record_and_dossier(
-                        aid, nm, f"{nm} ({tn})", ep, True, wms + 75.0, wms,
-                        [{"name": tn, "description": nm, "inputSchema": {"type": "object", "properties": {pn: {"type": "string"}}, "required": [pn]}}],
-                        prev_record={"encounter_count": 35, "room_completions": wins, "synaptic_weight": 0.92},
-                    )
-        elif loaded_from_sb:
-            self.pool_by_id.update(loaded_from_sb)
+    def _upsert_sb(self, rows: List[Dict[str, Any]]) -> None:
+        u, k = self._sb_creds()
+        if not u or not k or not rows: return
+        min_r = [{"agent_id": r["agent_id"], "name": r["name"], "description": r["description"], "endpoint": r["endpoint"], "guarantee_grade": r["guarantee_grade"], "latency_grade": r["latency_grade"], "mgle_nnp_stamp": r["mgle_nnp_stamp"], "mgle_nnp_64bit": r["mgle_nnp_64bit"], "domain_mask": r["domain_mask"], "avg_latency_ms": r["avg_latency_ms"], "synaptic_weight": r["synaptic_weight"], "last_audited_at": r["last_audited_at"]} for r in rows]
+        try: urllib.request.urlopen(urllib.request.Request(f"{u}/rest/v1/radial_agent_phonebook?on_conflict=agent_id", data=json.dumps(min_r).encode(), headers={"apikey": k, "Authorization": f"Bearer {k}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal"}, method="POST"), timeout=12).close()
+        except Exception: pass
 
 
+    def verify_outcome(self, aid: str, tkt: str, ok: bool, obs_ms: Optional[float] = None) -> Dict[str, Any]:
+        valid, rsn = verify_execution_ticket(aid, tkt)
+        if not valid or tkt in self.redeemed_tickets: return {"agent_id": aid, "ticket_valid": False, "reason": rsn, "sabotage_blocked": True, "quarantined": False}
+        rec = self.pool_by_id.get(aid)
+        if not rec: return {"agent_id": aid, "ticket_valid": True, "quarantined": False}
+        self.redeemed_tickets.add(tkt); self.record_event("outcome_reports_verified")
+        if ok:
+            rec["room_completions"] = int(rec.get("room_completions") or 0) + 1
+            rec["synaptic_weight"] = min(0.99, round(float(rec.get("synaptic_weight") or 0.80) + 0.03, 4))
+            upd = build_agent_record_and_dossier(rec["agent_id"], rec["name"], rec.get("description", ""), rec["endpoint"], True, rec.get("avg_latency_ms"), obs_ms or rec.get("avg_latency_ms"), [], rec.get("auth_mode", "none"), prev_record=rec)
+            self.pool_by_id[aid] = upd
+            return {"agent_id": aid, "ticket_valid": True, "sabotage_blocked": False, "quarantined": False, "updated_synaptic_weight": upd["synaptic_weight"]}
+        probed = interrogate_live_endpoint(rec)
+        alive = probed.get("guarantee_grade") in ("A", "B")
+        self.pool_by_id[aid] = probed
+        return {"agent_id": aid, "ticket_valid": True, "independent_probe_alive": alive, "quarantined": not alive}
+
+
+    def run_live_scout_sweep(self, limit: int = 30) -> Dict[str, Any]:
+        with self._lock:
+            if self.telemetry["scout_currently_running"]: return {"status": "already_running", "total_pool": len(self.pool_by_id)}
+            self.telemetry["scout_currently_running"] = True
+        try:
+            cands: List[Dict[str, Any]] = []
+            try:
+                cur = self.crawl_cursor["registry_cursor"]
+                url = f"https://registry.modelcontextprotocol.io/v0.1/servers?limit={limit}&version=latest" + (f"&cursor={urllib.parse.quote(cur)}" if cur else "")
+                with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": f"MglennP-RadialScout/{SPEC_VERSION}"}), timeout=12) as r:
+                    pl = json.loads(r.read().decode())
+                self.crawl_cursor["registry_cursor"] = str((pl.get("metadata") or {}).get("nextCursor") or "")
+                for ent in (pl.get("servers") or []):
+                    sv = ent.get("server") if isinstance(ent, dict) and isinstance(ent.get("server"), dict) else ent
+                    if not isinstance(sv, dict) or not sv.get("name"): continue
+                    rem = next((str(x["url"]).strip() for x in (sv.get("remotes") or []) if isinstance(x, dict) and str(x.get("url") or "").startswith("https://")), "")
+                    rep = str((sv.get("repository") or {}).get("url") or "").strip() if isinstance(sv.get("repository"), dict) else ""
+                    if rem or rep: cands.append({"agent_id": f"mcp://{str(sv['name']).lower()}", "name": str(sv.get("title") or sv["name"]), "description": str(sv.get("description") or "")[:300], "endpoint": rem or rep})
+            except Exception: pass
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+                audited = list(ex.map(interrogate_live_endpoint, cands)) if cands else []
+            for rec in audited: self.pool_by_id[rec["agent_id"]] = rec
+            if audited: self._upsert_sb(audited)
+            with self._lock:
+                self.telemetry["scout_sweeps_completed"] += 1
+                self.telemetry["last_scout_sweep_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            if self.hydrate_external: threading.Thread(target=self._save_telemetry, daemon=True).start()
+            return {"status": "completed", "probed_count": len(audited), "total_pool": len(self.pool_by_id)}
+        finally:
+            with self._lock: self.telemetry["scout_currently_running"] = False
+
+
+    def _daemon(self) -> None:
+        time.sleep(1.0)
+        while True:
+            try: self.run_live_scout_sweep(35)
+            except Exception: pass
+            time.sleep(900.0)
+
+
+MCP_SERVER_TOOLS = [
+    {"name": "flash_matchmake_agents", "description": "64-bit MGLE-NNP MCP matchmaker (Top-10 varied or mode='crew' 3-agent triad).", "inputSchema": {"type": "object", "properties": {"intent": {"type": "string"}, "capabilities": {"type": "array", "items": {"type": "string"}}, "mode": {"type": "string", "enum": ["top10_varied", "crew"]}, "require_instant_zero_auth": {"type": "boolean"}, "max_latency_grade": {"type": "string"}, "top_k": {"type": "integer"}}}},
+    {"name": "get_agent_dossier", "description": "Fetch live 4-point Virginia probe dossier.", "inputSchema": {"type": "object", "properties": {"agent_id": {"type": "string"}}, "required": ["agent_id"]}},
+    {"name": "get_switchboard_telemetry", "description": "Return real pool counts and persistent external usage counters.", "inputSchema": {"type": "object", "properties": {}}},
+]
 
 
 class ThreadingHTTPServerReuse(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
 
 
-
-
 def create_http_handler(runtime: StandaloneSwitchboardRuntime):
-    class SwitchboardRequestHandler(http.server.BaseHTTPRequestHandler):
-        def _send_bytes(self, code: int, content_type: str, raw: bytes) -> None:
-            self.send_response(code)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(raw)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Radial-Pass")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.end_headers()
-            self.wfile.write(raw)
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _bytes(self, code: int, ct: str, raw: bytes) -> None:
+            self.send_response(code); self.send_header("Content-Type", ct); self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Radial-Pass, mcp-protocol-version, Mcp-Session-Id"); self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.end_headers(); self.wfile.write(raw)
 
 
-        def _send_json(self, code: int, payload: Dict[str, Any]) -> None:
-            self._send_bytes(code, "application/json; charset=utf-8", json.dumps(payload, indent=2).encode("utf-8"))
+        def _json(self, code: int, obj: Dict[str, Any]) -> None:
+            self._bytes(code, "application/json; charset=utf-8", json.dumps(obj, indent=2).encode("utf-8"))
 
 
-        def do_OPTIONS(self) -> None:  # noqa: N802
-            self._send_bytes(204, "text/plain; charset=utf-8", b"")
+        def do_OPTIONS(self) -> None: self._bytes(204, "text/plain", b"")
 
 
-        def do_GET(self) -> None:  # noqa: N802
-            parsed = urllib.parse.urlparse(self.path)
-            p = parsed.path.rstrip("/") or "/"
-            qs = urllib.parse.parse_qs(parsed.query)
+        def _health(self) -> Dict[str, Any]:
+            recs = list(runtime.pool_by_id.values())
+            ab = sum(1 for r in recs if r.get("guarantee_grade") in ("A", "B"))
+            gd = sum(1 for r in recs if r.get("guarantee_grade") == "D")
+            ge = sum(1 for r in recs if r.get("guarantee_grade") == "E")
+            runtime._recompute()
+            return {"status": "ok", "service": f"MglennP Radial Switchboard (Spec Rev {SPEC_VERSION})", "spec_version": SPEC_VERSION, "contact_email": CONTACT_EMAIL, "github_repository": PUBLIC_GITHUB_REPO, "synthetic_seed_rows": 0, "mcp_endpoint": "https://radialswitchboard.com/mcp", "stdio_bridge_script": "https://radialswitchboard.com/mcp_stdio_bridge.py", "starter_key_endpoint": "https://radialswitchboard.com/v1/keys/starter", "usdc_treasury_base": runtime.gate.treasury_address, "total_unsorted_pool": len(recs), "live_callable_ab": ab, "offline_code_d": gd, "quarantined_e": ge, "total_external_uses": runtime.telemetry["total_external_uses"], "telemetry": dict(runtime.telemetry), "usdc_settled_usd": round(sum(float(x.get("gross_usdc_received") or 0.0) for x in runtime.gate.tax_revenue_ledger), 6), "tax_reserved_usd": round(sum(float(x.get("tax_reserve_30pct_usd") or 0.0) for x in runtime.gate.tax_revenue_ledger), 6)}
 
 
+        def do_GET(self) -> None:
+            pr = urllib.parse.urlparse(self.path); p = pr.path.rstrip("/") or "/"; qs = urllib.parse.parse_qs(pr.query)
+            ui = (qs.get("ui_observer") or [""])[0].lower() in ("1", "true")
             if p in ("/", "/directory"):
-                ui = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "radial_agent_directory_explorer.html")
-                if os.path.isfile(ui):
-                    self._send_bytes(200, "text/html; charset=utf-8", open(ui, "rb").read())
-                    return
-                self._send_bytes(200, "text/html; charset=utf-8", f"<h1>MglennP Radial Switchboard Spec {SPEC_VERSION} Live</h1>".encode("utf-8"))
-                return
-
-
-            if p == "/llms.txt":
-                txt = (
-                    f"# MglennP Radial Switchboard — Spec Rev {SPEC_VERSION}\n"
-                    f"Brand: MglennP — An honest approach to solving everyday challenges.\n"
-                    f"Default Flash Policy: Top-10 Anti-Monoculture Varied Matchmaking (POST /v1/flash)\n"
-                    f"Dual-Lane Gate: 15 free daily calls -> Lane A (0.01 USDC on Base {runtime.gate.treasury_address} for 100 handshakes) "
-                    f"OR Lane B (Canary Scout Duty POST /v1/work/claim for 20-handshake 1h pass).\n"
-                )
-                self._send_bytes(200, "text/plain; charset=utf-8", txt.encode("utf-8"))
-                return
-
-
-            if p in ("/openapi.json", "/.well-known/mcp.json"):
-                self._send_json(200, {
-                    "openapi": "3.1.0",
-                    "info": {"title": "MglennP Radial Switchboard", "version": SPEC_VERSION},
-                    "usdc_treasury_base": runtime.gate.treasury_address,
-                    "default_flash_top_k": DEFAULT_FLASH_TOP_K,
-                    "endpoints": ["/v1/flash", "/v1/matchmake", "/v1/dossier/{agent_id}", "/v1/room/handshake", "/v1/x402/settle", "/v1/work/claim", "/v1/work/submit", "/v1/health", "/v1/benchmark"],
-                })
-                return
-
-
-            if p == "/v1/health":
+                f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "radial_agent_directory_explorer.html")
+                self._bytes(200, "text/html; charset=utf-8", open(f, "rb").read() if os.path.isfile(f) else f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
+            elif p == "/mcp_stdio_bridge.py":
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                self._bytes(200, "text/x-python; charset=utf-8", MCP_STDIO_BRIDGE_SOURCE.encode())
+            elif p == "/llms.txt":
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                self._bytes(200, "text/plain; charset=utf-8", f"# MglennP Radial Switchboard -- Spec Rev {SPEC_VERSION}\nContact: {CONTACT_EMAIL} | Virginia, USA (US-EAST4)\nMCP Hook: POST https://radialswitchboard.com/mcp\nStarter Key: POST https://radialswitchboard.com/v1/keys/starter\nTreasury: {runtime.gate.treasury_address}\n".encode())
+            elif p in ("/mcp/server-card", "/.well-known/ai-catalog.json"):
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                c = {"$schema": "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json", "name": "com.radialswitchboard/matchmaker", "version": SPEC_VERSION, "contact": {"name": "MglennP", "email": CONTACT_EMAIL}, "supportedProtocolVersions": ["2026-07-28", "2025-06-18"], "remotes": [{"type": "streamable-http", "url": "https://radialswitchboard.com/mcp"}]}
+                self._json(200, {"servers": [c]} if p == "/.well-known/ai-catalog.json" else c)
+            elif p in ("/openapi.json", "/.well-known/mcp.json"):
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                self._json(200, {"openapi": "3.1.0", "info": {"title": "MglennP Radial Switchboard", "version": SPEC_VERSION, "contact": {"email": CONTACT_EMAIL}}, "mcp_streamable_http": "https://radialswitchboard.com/mcp", "synthetic_seed_rows": 0})
+            elif p == "/v1/health": self._json(200, self._health())
+            elif p == "/v1/benchmark":
                 recs = list(runtime.pool_by_id.values())
-                ab = sum(1 for r in recs if r.get("guarantee_grade") in ("A", "B"))
-                gd = sum(1 for r in recs if r.get("guarantee_grade") == "D")
-                ge = sum(1 for r in recs if r.get("guarantee_grade") == "E")
-                gf = len(recs) - (ab + gd + ge)
-                self._send_json(200, {
-                    "status": "ok",
-                    "service": f"MglennP Radial Switchboard (Standalone Spec Rev {SPEC_VERSION})",
-                    "spec_version": SPEC_VERSION,
-                    "default_flash_top_k": DEFAULT_FLASH_TOP_K,
-                    "usdc_treasury_base": runtime.gate.treasury_address,
-                    "total_unsorted_pool": len(recs),
-                    "live_callable_ab": ab, "offline_code_d": gd, "quarantined_e": ge, "slashed_f": gf,
-                    "inventory": {
-                        "total_indexed": len(recs), "verified_live_callable": ab,
-                        "unhosted_repos_grade_d": gd, "quarantined_dead_grade_e": ge,
-                        "internal_system_canaries": gf, "reconciled_sum": len(recs), "unaccounted_records": 0,
-                    },
-                })
-                return
+                s = sorted(float(flash_unsorted_pool(recs, ["sql", "database"], max_lat="E")["single_pass_flash_ms"]) for _ in range(10))
+                self._json(200, {"spec_version": SPEC_VERSION, "agents_scanned": len(recs), "default_top_k": DEFAULT_FLASH_TOP_K, "p50_bitwise_ms": s[len(s)//2] if s else 0.0})
+            elif p == "/v1/directory/live":
+                recs = sorted(runtime.pool_by_id.values(), key=lambda x: (0 if x.get("guarantee_grade") == "A" else 1, float(x.get("avg_latency_ms") or 99999.0)))
+                self._json(200, {"spec_version": SPEC_VERSION, "contact_email": CONTACT_EMAIL, "synthetic_seed_rows": 0, "total_agents": len(recs), "appeals": runtime.appeals_log, "tax_ledger": runtime.gate.tax_revenue_ledger, "agents": recs[:250]})
+            elif p == "/v1/appeals": self._json(200, {"count": len(runtime.appeals_log), "appeals": runtime.appeals_log})
+            elif p == "/v1/matchmake":
+                if not ui: runtime.record_event("rest_matchmake_calls", ext_call=True)
+                self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), infer_capabilities_from_intent((qs.get("intent") or ["mcp"])[0]), mode=(qs.get("mode") or ["top10_varied"])[0]))
+            elif p.startswith("/v1/dossier/"):
+                rec = runtime.pool_by_id.get(urllib.parse.unquote(p[len("/v1/dossier/"):]))
+                self._json(200 if rec else 404, (rec.get("dossier_json") or rec) if rec else {"error": "Not found"})
+            else: self._json(404, {"error": "Route not found"})
 
 
-            if p == "/v1/benchmark":
-                recs = list(runtime.pool_by_id.values())
-                samples = []
-                for _ in range(20):
-                    r = flash_unsorted_pool(recs, ["sql", "database"], max_latency_grade="C", top_k=DEFAULT_FLASH_TOP_K)
-                    samples.append(float(r["single_pass_flash_ms"]))
-                samples.sort()
-                self._send_json(200, {
-                    "spec_version": SPEC_VERSION, "agents_scanned": len(recs), "default_top_k": DEFAULT_FLASH_TOP_K,
-                    "p50_bitwise_ms": samples[len(samples) // 2],
-                    "p95_bitwise_ms": samples[min(len(samples) - 1, int(len(samples) * 0.95))],
-                    "bitwise_scan_1803_agents_ms": samples[len(samples) // 2],
-                })
-                return
-
-
-            if p == "/v1/directory/live":
-                recs = list(runtime.pool_by_id.values())
-                self._send_json(200, {"total_agents": len(recs), "crawl_count": runtime.crawl_cursor["total_runs"], "agents": recs[:250]})
-                return
-
-
-            if p == "/v1/matchmake":
-                intent = (qs.get("intent") or ["sql database"])[0]
-                caps = infer_capabilities_from_intent(intent)
-                self._send_json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), caps, top_k=int((qs.get("top_k") or [DEFAULT_FLASH_TOP_K])[0])))
-                return
-
-
-            if p.startswith("/v1/dossier/"):
-                aid = urllib.parse.unquote(p[len("/v1/dossier/"):])
-                rec = runtime.pool_by_id.get(aid)
-                self._send_json(200 if rec else 404, (rec.get("dossier_json") or {}) if rec else {"error": "Not found"})
-                return
-
-
-            self._send_json(404, {"error": "Route not found"})
-
-
-        def do_POST(self) -> None:  # noqa: N802
-            p = urllib.parse.urlparse(self.path).path.rstrip("/")
+        def do_POST(self) -> None:
+            p = urllib.parse.urlparse(self.path).path.rstrip("/") or "/"
             ln = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(min(ln, 524288)).decode("utf-8")) if ln > 0 else {}
-            ip = self.client_address[0] if self.client_address else "anonymous"
-            tok = self.headers.get("X-Radial-Pass") or body.get("pass_token")
-
-
-            if p in ("/v1/flash", "/v1/matchmake"):
-                caps = body.get("capabilities") or infer_capabilities_from_intent(str(body.get("intent") or ""))
-                res = flash_unsorted_pool(
-                    list(runtime.pool_by_id.values()), caps,
-                    bool(body.get("require_instant_zero_auth", False)),
-                    str(body.get("max_latency_grade", "C")),
-                    top_k=int(body.get("top_k", DEFAULT_FLASH_TOP_K)),
-                )
-                self._send_json(200, res)
-            elif p == "/v1/directory/crawl":
-                queries = ("topic:mcp-server", "topic:model-context-protocol", "topic:a2a-agent", "fastmcp in:readme")
-                q = queries[runtime.crawl_cursor["query_index"] % len(queries)]
-                pg = runtime.crawl_cursor["page"]
-                out = crawl_and_interrogate_batch_to_supabase(q, pg, 20)
-                for rec in out.get("records", []):
-                    runtime.pool_by_id[rec["agent_id"]] = rec
-                runtime.crawl_cursor["page"] = pg + 1 if pg < 8 else 1
-                if runtime.crawl_cursor["page"] == 1:
-                    runtime.crawl_cursor["query_index"] += 1
-                runtime.crawl_cursor["total_runs"] += 1
-                self._send_json(200, {"added_or_updated": out["audited_count"], "total_unique_real_agents": len(runtime.pool_by_id)})
-            elif p == "/v1/work/claim":
-                self._send_json(200, runtime.gate.issue_scout_work_assignment(list(runtime.pool_by_id.values())))
+            try: body = json.loads(self.rfile.read(min(ln, 524288)).decode("utf-8", errors="replace")) if ln > 0 else {}
+            except Exception: body = {}
+            ip = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (self.client_address[0] if self.client_address else "anon")
+            if p == "/mcp":
+                rid, m, prm = body.get("id", 1), str(body.get("method") or ""), (body.get("params") if isinstance(body.get("params"), dict) else {})
+                if m == "notifications/initialized": self._bytes(202, "application/json", b"")
+# --- RADIAL_PY_CONTINUATION ---
+                elif m == "initialize": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": str(prm.get("protocolVersion") or "2026-07-28"), "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "MglennP Radial Switchboard", "version": SPEC_VERSION}}})
+                elif m == "ping": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {}})
+                elif m == "tools/list": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"tools": MCP_SERVER_TOOLS}})
+                elif m == "tools/call":
+                    runtime.record_event("mcp_jsonrpc_calls", ext_call=True)
+                    tn, ag = str(prm.get("name") or ""), (prm.get("arguments") if isinstance(prm.get("arguments"), dict) else {})
+                    if tn == "flash_matchmake_agents": out = flash_unsorted_pool(list(runtime.pool_by_id.values()), ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), bool(ag.get("require_instant_zero_auth", False)), str(ag.get("max_latency_grade", "E")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"))
+                    elif tn == "get_agent_dossier": out = runtime.pool_by_id.get(str(ag.get("agent_id") or "")) or {"error": "Not found"}
+                    elif tn == "get_switchboard_telemetry": out = self._health()
+                    else: self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unknown tool"}}); return
+                    self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": json.dumps(out)}], "structuredContent": out, "isError": False}})
+                else: self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unsupported"}})
+            elif p == "/v1/keys/starter":
+                obj, nw = runtime.gate.mint_daily_starter_pass(ip, str(body.get("agent_label") or "visitor-hook"))
+                if nw: runtime.record_event("starter_keys_minted")
+                self._json(200, obj)
+            elif p.startswith("/v1/canary/"):
+                cp = p[len("/v1/canary/"):].strip()
+                self._json(200, {"jsonrpc": "2.0", "id": body.get("id", 1), "result": {"tools": [{"name": "radial_canary_ping", "description": "Canary", "inputSchema": {"type": "object", "properties": {cp: {"type": "string"}}, "required": [cp]}}]}})
+            elif p in ("/v1/flash", "/v1/matchmake"):
+                if not bool(body.get("ui_observer", False)): runtime.record_event("rest_matchmake_calls", ext_call=True)
+                self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), body.get("capabilities") or infer_capabilities_from_intent(str(body.get("intent") or "")), bool(body.get("require_instant_zero_auth", False)), str(body.get("max_latency_grade", "E")), top_k=int(body.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(body.get("mode") or "top10_varied")))
+            elif p == "/v1/directory/crawl": self._json(200, runtime.run_live_scout_sweep(int(body.get("limit", 30))))
+            elif p == "/v1/appeals":
+                prb = interrogate_live_endpoint({"agent_id": str(body.get("agent_id") or f"mcp://sub-{secrets.token_hex(3)}"), "name": str(body.get("agent_id") or body.get("endpoint") or ""), "description": str(body.get("reason") or ""), "endpoint": str(body.get("endpoint") or "")})
+                runtime.pool_by_id[prb["agent_id"]] = prb; runtime._upsert_sb([prb])
+                ar = {"id": f"APP-{len(runtime.appeals_log)+1}", "slug": prb["agent_id"], "endpoint": prb["endpoint"], "status": prb["audit_status"]}
+                runtime.appeals_log.insert(0, ar); self._json(200, {"appeal": ar, "updated_record": prb})
+            elif p == "/v1/work/claim": self._json(200, runtime.gate.issue_scout_work_assignment(list(runtime.pool_by_id.values())))
             elif p == "/v1/work/submit":
                 res = runtime.gate.verify_scout_work_submission(str(body.get("assignment_id") or ""), body.get("results") or [], str(body.get("region") or "external"))
-                self._send_json(200 if res.get("status") == "VERIFIED_WORK_PASS_ISSUED" else 400, res)
+                self._json(200 if res.get("status") == "VERIFIED_WORK_PASS_ISSUED" else 400, res)
             elif p == "/v1/x402/settle":
-                try:
-                    self._send_json(200, runtime.gate.settle_x402_usdc_payment(str(body.get("tx_hash") or ""), float(body.get("amount_usdc") or 0.0), str(body.get("payer_wallet") or "")))
-                except ValueError as err:
-                    self._send_json(400, {"error": str(err)})
+                try: self._json(200, runtime.gate.settle_x402_usdc_payment(str(body.get("tx_hash") or ""), float(body.get("amount_usdc") or 0.0), str(body.get("payer_wallet") or ""), False))
+                except ValueError as err: self._json(400, {"error": str(err)})
             elif p == "/v1/room/handshake":
-                res = runtime.room.execute_handshake(ip, str(body.get("target_agent_id") or ""), body.get("payload") or {}, tok)
-                self._send_json(int(res.get("http_status", 200)), res)
+                tok = self.headers.get("X-Radial-Pass") or body.get("pass_token")
+                ok_g, gi = runtime.gate.check_or_issue_402_challenge(ip, tok)
+                if not ok_g: self._json(402, gi); return
+                w = runtime.pool_by_id.get(str(body.get("target_agent_id") or ""))
+                if not w: self._json(404, {"error": "Unknown target agent"}); return
+                t0 = time.perf_counter()
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(str(w["endpoint"]), data=json.dumps(body.get("payload") or {}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=8) as r:
+                        wr = json.loads(r.read(262144).decode("utf-8", errors="replace"))
+                    ok_w = isinstance(wr, dict) and "error" not in wr
+                except Exception as exc:
+                    wr, ok_w = {"error": str(exc)}, False
+                if ok_w: runtime.record_event("room_handshakes_completed")
+                self._json(200 if ok_w else 502, {"http_status": 200 if ok_w else 502, "room_witness_verdict": "DELIVERY_VERIFIED" if ok_w else "WORKER_CONTRACT_FAILURE", "measured_room_ms": round((time.perf_counter()-t0)*1000.0, 2), "caller_gate": gi, "worker_response": wr})
             elif p == "/v1/outcome":
-                aid = str(body.get("agent_id") or "")
-                self._send_json(200, {"agent_id": aid, "ticket_valid": False, "independent_probe_alive": True, "quarantined": False, "guarantee_grade": "A"})
-            else:
-                self._send_json(404, {"error": "Route not found"})
-
-
-        def log_message(self, fmt: str, *args: Any) -> None:
-            return
-    return SwitchboardRequestHandler
-
-
-
-
+                lv = body.get("observed_latency_ms")
+                out = runtime.verify_outcome(str(body.get("agent_id") or ""), str(body.get("execution_ticket") or ""), bool(body.get("outcome_success", True)), float(lv) if isinstance(lv, (int, float)) else None)
+                self._json(200 if out.get("ticket_valid") else 403, out)
+            else: self._json(404, {"error": "Route not found"})
+        def log_message(self, fmt: str, *args: Any) -> None: return
+    return Handler
 def run_self_test() -> int:
-    assert DEFAULT_USDC_TREASURY_ADDRESS.lower() == "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd"
-    assert DEFAULT_FLASH_TOP_K == 10
-    rt = StandaloneSwitchboardRuntime(hydrate_external=False)
-    for i in range(5):
-        c = build_agent_record_and_dossier(
-            f"mcp://monoculture-clone-{i}", f"Clone #{i}", "PostgreSQL database query",
-            f"https://s{i}.monoculture-sql.io/mcp", True, 110.0, 55.0,
-            [{"name": "exec_sql", "description": "SQL", "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}}],
-            prev_record={"encounter_count": 30, "room_completions": 10, "synaptic_weight": 0.95},
-        )
-        rt.pool_by_id[c["agent_id"]] = c
-
-
+    rt = StandaloneSwitchboardRuntime(hydrate_external=False, start_background_scouts=False)
+    assert len(rt.pool_by_id) == 0 and rt.telemetry["total_external_uses"] == 0
+    defs = [("test://v0", "Postgres SQL", "postgres sql database python", "https://n0.v0.example/mcp"), ("test://v1", "SEC Finance", "sec finance search rag", "https://n1.v1.example/mcp"), ("test://v2", "Math Audit", "math verify security audit", "https://n2.v2.example/mcp")]
+    for i in range(12):
+        aid, nm, ds, ep = defs[i] if i < 3 else (f"test://v{i}", f"SQL {i}", "postgres sql database", f"https://n{i}.v{i}.example/mcp")
+        rt.pool_by_id[aid] = build_agent_record_and_dossier(aid, nm, ds, ep, True, 80.0, 45.0 + i, [{"name": f"t_{i}", "description": ds, "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]}}])
     srv = ThreadingHTTPServerReuse(("127.0.0.1", 0), create_http_handler(rt))
-    port = srv.server_address[1]
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
-        base = f"http://127.0.0.1:{port}"
-        h = json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode("utf-8"))
-        assert h["status"] == "ok" and h["inventory"]["unaccounted_records"] == 0
-        b = json.loads(urllib.request.urlopen(f"{base}/v1/benchmark", timeout=5).read().decode("utf-8"))
-        assert b["default_top_k"] == 10
-        llms = urllib.request.urlopen(f"{base}/llms.txt", timeout=5).read().decode("utf-8")
-        assert "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd" in llms
-        f_req = urllib.request.Request(
-            f"{base}/v1/flash",
-            data=json.dumps({"capabilities": ["sql", "database"], "require_instant_zero_auth": True, "max_latency_grade": "B"}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        f_res = json.loads(urllib.request.urlopen(f_req, timeout=5).read().decode("utf-8"))
-        assert f_res["finalist_count"] == 10 and f_res["variability_summary"]["unique_vendor_domains"] == 10
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        h = json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())
+        assert h["synthetic_seed_rows"] == 0 and h["total_external_uses"] == 0 and h["contact_email"] == CONTACT_EMAIL
+        ur = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/flash", data=json.dumps({"capabilities": ["sql"], "ui_observer": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        assert ur["finalist_count"] == 10 and json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())["total_external_uses"] == 0
+        cr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/flash", data=json.dumps({"capabilities": ["sql", "finance_data", "math_verify"], "mode": "crew", "ui_observer": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        assert cr["finalist_count"] == 3 and cr["crew_manifest"]["provider_independence_verified"] is True
+        kr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/keys/starter", data=b"{}", headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        assert kr["pass_token"].startswith("rs3.starter.")
+        mr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "flash_matchmake_agents", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
+        tkt, tid = mr["result"]["structuredContent"]["finalists"][0]["execution_ticket"], mr["result"]["structuredContent"]["finalists"][0]["agent_id"]
+        assert CONTACT_EMAIL in urllib.request.urlopen(f"{base}/llms.txt", timeout=5).read().decode()
+        assert "radialswitchboard.com/mcp" in urllib.request.urlopen(f"{base}/mcp_stdio_bridge.py", timeout=5).read().decode()
+        assert json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())["total_external_uses"] == 3
+        ok_o = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/outcome", data=json.dumps({"agent_id": tid, "execution_ticket": tkt, "outcome_success": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        assert ok_o["ticket_valid"] is True
     finally:
-        srv.shutdown()
-        srv.server_close()
-
-
-    print(f"[PASS] Spec {SPEC_VERSION} Production Cutover HTTP Server + Top-10 Varied Flash + Beacons Verified.")
+        srv.shutdown(); srv.server_close()
+    print(f"[PASS] Crisp Spec {SPEC_VERSION} Bridged Engine 100% Verified.")
     return 0
-
-
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--self-test", action="store_true")
-    ap.add_argument("--crawl-once", action="store_true")
-    ap.add_argument("--serve", action="store_true")
+    ap.add_argument("--self-test", action="store_true"); ap.add_argument("--crawl-once", action="store_true"); ap.add_argument("--serve", action="store_true")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8080")))
     args = ap.parse_args()
     if args.crawl_once:
-        print(json.dumps(crawl_and_interrogate_batch_to_supabase(), indent=2))
-        return 0
+        print(json.dumps(StandaloneSwitchboardRuntime(False, False).run_live_scout_sweep(35), indent=2)); return 0
     if args.serve:
-        rt = StandaloneSwitchboardRuntime(hydrate_external=True)
+        rt = StandaloneSwitchboardRuntime(True, True)
         with ThreadingHTTPServerReuse(("0.0.0.0", args.port), create_http_handler(rt)) as srv:
-            print(f"Radial Switchboard {SPEC_VERSION} active on 0.0.0.0:{args.port} | Pool={len(rt.pool_by_id)} | Treasury={DEFAULT_USDC_TREASURY_ADDRESS}")
-            srv.serve_forever()
+            print(f"Radial Switchboard {SPEC_VERSION} active on 0.0.0.0:{args.port}"); srv.serve_forever()
         return 0
     return run_self_test()
-
-
-
-
 if __name__ == "__main__":
     raise SystemExit(main())
