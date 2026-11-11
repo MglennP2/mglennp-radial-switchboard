@@ -1,317 +1,601 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Radial Switchboard Spec Rev 3.0.5 — Centered Radial Matchmaker, Dual-Lane Gate &amp; Open Agent Directory</title>
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&amp;family=JetBrains+Mono:wght@400;600;700&amp;display=swap" rel="stylesheet" />
-  <style>
-    body { font-family: 'Inter', sans-serif; background-color: #070b14; color: #f1f5f9; }
-    .font-mono-code { font-family: 'JetBrains Mono', monospace; }
-    @keyframes radialSpinCw { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    @keyframes radialSpinCcw { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-    .radial-ring-cw { transform-origin: 50px 50px; animation: radialSpinCw 16s linear infinite; }
-    .radial-ring-ccw { transform-origin: 50px 50px; animation: radialSpinCcw 10s linear infinite; }
-    .radial-ring-slow-ccw { transform-origin: 50px 50px; animation: radialSpinCcw 28s linear infinite; }
-    .radial-sweep-beam { transform-origin: 50px 50px; animation: radialSpinCw 5.2s linear infinite; }
-    .radial-origin-core { transform-origin: 50px 50px; animation: radialCorePulse 2.4s ease-in-out infinite; }
-    .radial-emblem-shell:hover .radial-ring-cw { animation-duration: 5s; }
-    .radial-emblem-shell:hover .radial-ring-ccw { animation-duration: 3.5s; }
-    .radial-emblem-shell:hover .radial-ring-slow-ccw { animation-duration: 9s; }
-    .radial-emblem-shell:hover .radial-sweep-beam { animation-duration: 1.8s; }
-    .radial-flash-burst { box-shadow: 0 0 68px rgba(251, 191, 36, 0.78), 0 0 32px rgba(52, 211, 153, 0.55) !important; border-color: rgba(251, 191, 36, 0.95) !important; transform: scale(1.03); }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MglennP Radial Switchboard &mdash; Spec Rev 3.2.0 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
+<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.2.0): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+<style>
+:root { --bgv:#06090F; --bgs:#0C1320; --bge:#121C2E; --bgw:#080D17; --bd:#1D2B44; --bdb:#2B4268; --em:#00E5B0; --emd:rgba(0,229,176,0.13); --cy:#38BDF8; --cyd:rgba(56,189,248,0.13); --am:#F59E0B; --amd:rgba(245,158,11,0.14); --tp:#F8FAFC; --ts:#94A3B8; --tm:#64748B; --fd:'Space Grotesk',system-ui,sans-serif; --fb:'IBM Plex Sans',system-ui,sans-serif; --fm:'JetBrains Mono',monospace; --rl:14px; --rm:10px; --rs:6px; }
+* { box-sizing:border-box; margin:0; padding:0; }
+html, body { background-color:var(--bgv); color:var(--tp); font-family:var(--fb); font-size:15px; line-height:1.55; min-height:100vh; }
+body { background-image:radial-gradient(circle at 50% 0%, rgba(251,191,36,0.10) 0%, rgba(0,229,176,0.06) 28%, transparent 54%); }
+a { color:var(--cy); text-decoration:none; }
+a:hover { color:var(--em); text-decoration:underline; }
+.app-shell { max-width:1260px; margin:0 auto; padding:0 20px 56px; }
+.topbar { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:16px 0; border-bottom:1px solid var(--bd); flex-wrap:wrap; }
+.brand-cluster { display:flex; align-items:center; gap:12px; }
+.brand-dot { width:10px; height:10px; border-radius:50%; background:var(--em); box-shadow:0 0 12px var(--em); }
+.brand-title { font-family:var(--fd); font-weight:700; font-size:1.05rem; letter-spacing:0.03em; color:var(--tp); }
+.spec-pill { font-family:var(--fm); font-size:0.73rem; padding:3px 8px; border-radius:999px; background:var(--emd); color:var(--em); border:1px solid rgba(0,229,176,0.32); font-weight:600; }
+.topbar-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.contact-chip { display:inline-flex; align-items:center; gap:8px; padding:5px 10px; background:var(--bgs); border:1px solid var(--bd); border-radius:999px; font-family:var(--fm); font-size:0.76rem; color:var(--ts); }
+.contact-chip a { color:var(--tp); font-weight:500; }
+.conn-pill { font-family:var(--fm); font-size:0.74rem; padding:5px 10px; border-radius:999px; border:1px solid var(--bd); background:var(--bgs); color:var(--ts); }
+.conn-pill.live { border-color:rgba(0,229,176,0.4); color:var(--em); background:var(--emd); }
+.conn-pill.offline { border-color:rgba(245,158,11,0.4); color:var(--am); background:var(--amd); }
+button { font-family:var(--fb); cursor:pointer; border:none; transition:all 0.15s ease; }
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 14px; border-radius:var(--rs); font-weight:600; font-size:0.84rem; border:1px solid transparent; white-space:nowrap; }
+.btn-primary { background:var(--em); color:#031410; }
+.btn-primary:hover { background:#19F5C2; transform:translateY(-1px); }
+.btn-secondary { background:var(--bge); color:var(--tp); border-color:var(--bdb); }
+.btn-secondary:hover { border-color:var(--cy); color:var(--cy); }
+.btn-ghost { background:transparent; color:var(--ts); border-color:var(--bd); padding:5px 10px; font-size:0.76rem; font-family:var(--fm); }
+.btn-ghost:hover { color:var(--em); border-color:var(--em); }
+.btn-amber { background:var(--amd); color:var(--am); border-color:rgba(245,158,11,0.4); }
+.hero-section { display:flex; flex-direction:column; align-items:center; text-align:center; padding:28px 0 22px; }
+#radialHeroEmblemWrap { width:236px; height:236px; margin-bottom:16px; position:relative; display:flex; align-items:center; justify-content:center; border-radius:9999px; background:rgba(4,8,18,0.96); border:2px solid rgba(251,191,36,0.48); padding:12px; box-shadow:0 0 56px rgba(251,191,36,0.26), 0 0 24px rgba(0,229,176,0.18); transition:transform 0.28s ease, box-shadow 0.28s ease; }
+#radialHeroEmblemWrap:hover { transform:scale(1.025); border-color:rgba(251,191,36,0.85); }
+#radialHeroEmblemWrap.radial-flash-burst { box-shadow:0 0 68px rgba(251,191,36,0.82), 0 0 34px rgba(0,229,176,0.6) !important; border-color:rgba(251,191,36,0.98) !important; transform:scale(1.04); }
+@keyframes radialSpinCw { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+@keyframes radialSpinCcw { from { transform:rotate(360deg); } to { transform:rotate(0deg); } }
+@keyframes radialCorePulse { 0%,100% { transform:scale(0.96); opacity:0.92; } 50% { transform:scale(1.06); opacity:1; } }
+.radial-ring-cw { transform-origin:50px 50px; animation:radialSpinCw 16s linear infinite; }
+.radial-ring-ccw { transform-origin:50px 50px; animation:radialSpinCcw 10s linear infinite; }
+.radial-ring-slow-ccw { transform-origin:50px 50px; animation:radialSpinCcw 28s linear infinite; }
+.radial-sweep-beam { transform-origin:50px 50px; animation:radialSpinCw 5.2s linear infinite; }
+.radial-origin-core { transform-origin:50px 50px; animation:radialCorePulse 2.4s ease-in-out infinite; }
+#radialHeroEmblemWrap:hover .radial-ring-cw { animation-duration:5s; }
+#radialHeroEmblemWrap:hover .radial-ring-ccw { animation-duration:3.5s; }
+#radialHeroEmblemWrap:hover .radial-ring-slow-ccw { animation-duration:9s; }
+#radialHeroEmblemWrap:hover .radial-sweep-beam { animation-duration:1.8s; }
+.hero-headline { font-family:var(--fd); font-size:clamp(1.65rem,3.1vw,2.35rem); font-weight:700; letter-spacing:-0.02em; max-width:820px; margin-bottom:8px; }
+.hero-sub { color:var(--ts); max-width:740px; font-size:0.95rem; }
+.honesty-tag { font-family:var(--fm); color:var(--em); font-size:0.8rem; margin-top:8px; }
+.scoreboard-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin:18px 0 22px; }
+.score-card { background:var(--bgs); border:1px solid var(--bd); border-radius:var(--rm); padding:15px 16px; display:flex; flex-direction:column; justify-content:space-between; gap:6px; }
+.score-card.highlight-uses { border-color:rgba(0,229,176,0.42); background:linear-gradient(180deg,rgba(0,229,176,0.06) 0%,var(--bgs) 100%); }
+.score-label { font-family:var(--fm); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--ts); display:flex; align-items:center; justify-content:space-between; gap:6px; }
+.score-value { font-family:var(--fm); font-size:1.55rem; font-weight:700; color:var(--tp); font-variant-numeric:tabular-nums; }
+.score-value.emerald { color:var(--em); }
+.score-sub { font-family:var(--fm); font-size:0.73rem; color:var(--tm); font-variant-numeric:tabular-nums; }
+.score-actions { display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap; }
+.hook-hub { background:var(--bgs); border:1px solid var(--bdb); border-radius:var(--rl); padding:20px; margin-bottom:24px; box-shadow:0 14px 36px rgba(0,0,0,0.32); }
+.hook-hub-header { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+.hook-hub-title { font-family:var(--fd); font-size:1.15rem; font-weight:700; color:var(--tp); }
+.hook-hub-desc { font-size:0.87rem; color:var(--ts); margin-top:2px; }
+.hook-strip-grid { display:grid; grid-template-columns:1.25fr 0.7fr 1.45fr; gap:12px; margin-bottom:16px; }
+.hook-box { background:var(--bgw); border:1px solid var(--bd); border-radius:var(--rm); padding:10px 12px; }
+.hook-box-label { font-family:var(--fm); font-size:0.7rem; text-transform:uppercase; color:var(--tm); margin-bottom:6px; }
+.hook-box-row { display:flex; align-items:center; gap:8px; }
+.mono-readout { flex:1; min-width:0; background:var(--bge); border:1px solid var(--bd); color:var(--em); font-family:var(--fm); font-size:0.8rem; padding:7px 10px; border-radius:var(--rs); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.code-tabs-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid var(--bd); padding-bottom:10px; margin-bottom:10px; flex-wrap:wrap; }
+.code-tab-group { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.code-tab-btn { padding:6px 12px; border-radius:var(--rs); background:var(--bgw); color:var(--ts); border:1px solid var(--bd); font-family:var(--fm); font-size:0.77rem; font-weight:500; }
+.code-tab-btn.active { background:var(--cyd); color:var(--cy); border-color:rgba(56,189,248,0.45); }
+.code-pre-wrap { background:var(--bgw); border:1px solid var(--bd); border-radius:var(--rm); padding:14px 16px; overflow-x:auto; }
+pre.code-block { font-family:var(--fm); font-size:0.79rem; line-height:1.55; color:#E2E8F0; white-space:pre; margin:0; }
+.workspace-nav { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; border-bottom:1px solid var(--bd); padding-bottom:12px; flex-wrap:wrap; }
+.nav-tabs { display:flex; gap:8px; flex-wrap:wrap; }
+.nav-view-btn { padding:9px 15px; border-radius:var(--rs); background:var(--bgs); color:var(--ts); border:1px solid var(--bd); font-family:var(--fd); font-weight:600; font-size:0.88rem; }
+.nav-view-btn.active { background:var(--emd); color:var(--em); border-color:rgba(0,229,176,0.45); }
+.testbench-toggle-wrap { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:var(--rs); background:var(--bgs); border:1px solid var(--bd); font-family:var(--fm); font-size:0.75rem; color:var(--ts); }
+.view-panel { display:none; }
+.view-panel.active { display:block; }
+.panel-card { background:var(--bgs); border:1px solid var(--bd); border-radius:var(--rl); padding:20px; margin-bottom:18px; }
+.panel-title { font-family:var(--fd); font-size:1.08rem; font-weight:700; margin-bottom:6px; }
+.panel-subtitle { color:var(--ts); font-size:0.87rem; margin-bottom:16px; }
+.controls-grid { display:grid; grid-template-columns:1.6fr 1fr 0.8fr auto; gap:12px; align-items:end; margin-bottom:14px; }
+.field-group { display:flex; flex-direction:column; gap:5px; }
+.field-label { font-family:var(--fm); font-size:0.72rem; color:var(--ts); text-transform:uppercase; }
+input[type="text"], input[type="number"], select, textarea { width:100%; background:var(--bgw); border:1px solid var(--bd); color:var(--tp); padding:9px 12px; border-radius:var(--rs); font-family:var(--fb); font-size:0.88rem; }
+.cap-chips { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px; }
+.cap-chip { padding:5px 10px; border-radius:999px; background:var(--bgw); border:1px solid var(--bd); color:var(--ts); font-family:var(--fm); font-size:0.74rem; }
+.cap-chip.selected { background:var(--emd); color:var(--em); border-color:rgba(0,229,176,0.48); }
+.flash-meta-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-radius:var(--rm); background:var(--bgw); border:1px solid var(--bd); font-family:var(--fm); font-size:0.77rem; color:var(--ts); margin-bottom:14px; flex-wrap:wrap; }
+.crew-banner { padding:12px 15px; border-radius:var(--rm); background:var(--cyd); border:1px solid rgba(56,189,248,0.4); color:var(--tp); font-family:var(--fm); font-size:0.8rem; margin-bottom:14px; display:none; }
+.crew-banner.visible { display:block; }
+.finalists-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.agent-card { background:var(--bgw); border:1px solid var(--bd); border-radius:var(--rm); padding:14px; display:flex; flex-direction:column; gap:8px; }
+.agent-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.agent-name { font-family:var(--fd); font-weight:700; font-size:0.96rem; color:var(--tp); }
+.stamp-badge { font-family:var(--fm); font-size:0.75rem; font-weight:700; padding:3px 8px; border-radius:var(--rs); background:var(--emd); color:var(--em); border:1px solid rgba(0,229,176,0.35); white-space:nowrap; }
+.role-badge { display:inline-block; font-family:var(--fm); font-size:0.7rem; padding:2px 7px; border-radius:4px; background:var(--cyd); color:var(--cy); border:1px solid rgba(56,189,248,0.35); }
+.agent-meta-line { font-family:var(--fm); font-size:0.74rem; color:var(--ts); word-break:break-all; }
+.ticket-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:8px; border-top:1px solid var(--bd); flex-wrap:wrap; }
+.empty-honest-box { padding:26px 20px; text-align:center; background:var(--bgw); border:1px dashed var(--bdb); border-radius:var(--rm); color:var(--ts); }
+.table-wrap { overflow-x:auto; border:1px solid var(--bd); border-radius:var(--rm); }
+table { width:100%; border-collapse:collapse; font-size:0.83rem; }
+th, td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--bd); }
+th { background:var(--bgw); font-family:var(--fm); font-size:0.72rem; text-transform:uppercase; color:var(--ts); }
+td.mono { font-family:var(--fm); font-size:0.76rem; }
+.two-col-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.json-output-box { background:var(--bgw); border:1px solid var(--bd); border-radius:var(--rm); padding:12px; font-family:var(--fm); font-size:0.76rem; color:#CBD5E1; max-height:260px; overflow:auto; white-space:pre-wrap; margin-top:12px; }
+#toastBanner { position:fixed; bottom:22px; right:22px; z-index:999; background:var(--bge); color:var(--tp); border:1px solid var(--em); border-radius:var(--rm); padding:10px 16px; font-family:var(--fm); font-size:0.8rem; opacity:0; pointer-events:none; transition:opacity 0.18s ease; }
+#toastBanner.show { opacity:1; }
+.site-footer { margin-top:40px; padding-top:24px; border-top:1px solid var(--bd); display:grid; grid-template-columns:1.2fr 1fr 1.2fr; gap:20px; font-size:0.83rem; color:var(--ts); }
+.footer-heading { font-family:var(--fm); font-size:0.73rem; text-transform:uppercase; color:var(--tp); margin-bottom:8px; }
+.beacon-links { display:flex; flex-wrap:wrap; gap:8px; }
+.beacon-pill { font-family:var(--fm); font-size:0.73rem; padding:3px 8px; border-radius:4px; background:var(--bgs); border:1px solid var(--bd); color:var(--cy); }
+@media (max-width:980px) { .scoreboard-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .hook-strip-grid, .controls-grid, .finalists-grid, .two-col-grid, .site-footer { grid-template-columns:1fr; } }
+@media (max-width:560px) { .scoreboard-grid { grid-template-columns:1fr; } }
+</style>
 </head>
-<body class="min-h-screen bg-[#070b14] text-slate-100">
-  <header class="sticky top-0 z-30 border-b border-slate-800/90 bg-[#070b14]/95 backdrop-blur-md">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-      <button id="radialBrandLogoWrap" type="button" class="flex items-center gap-2.5 text-left group">
-        <svg viewBox="0 0 100 100" class="w-7 h-7 shrink-0" aria-hidden="true"><defs><radialGradient id="coreGlow-hdr" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fef3c7" /><stop offset="100%" stop-color="#f59e0b" stop-opacity="0" /></radialGradient><linearGradient id="sweepGrad-hdr" x1="50%" y1="50%" x2="100%" y2="15%"><stop offset="0%" stop-color="#fbbf24" stop-opacity="0" /><stop offset="100%" stop-color="#fbbf24" stop-opacity="0.5" /></linearGradient></defs><circle cx="50" cy="50" r="46" fill="#050914" stroke="#f59e0b" stroke-opacity="0.5" stroke-width="3" /><g class="radial-sweep-beam"><path d="M50,50 L50,8 A42,42 0 0,1 86,28 Z" fill="url(#sweepGrad-hdr)" /></g><g class="radial-ring-cw"><circle cx="50" cy="50" r="38" fill="none" stroke="#fbbf24" stroke-width="3.5" stroke-dasharray="14 6" /></g><g class="radial-ring-ccw"><circle cx="50" cy="50" r="22" fill="none" stroke="#34d399" stroke-width="3" stroke-dasharray="9 5" /></g><circle cx="50" cy="50" r="13" fill="url(#coreGlow-hdr)" /><circle cx="50" cy="50" r="6" fill="#fbbf24" /></svg>
-        <span class="text-sm sm:text-base font-black tracking-tight text-white">Radial <span class="text-amber-400">Switchboard</span></span>
-        <span class="text-[10px] font-mono-code uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Spec 3.0.5 • US-EAST4</span>
-      </button>
-      <nav class="flex flex-wrap items-center gap-2">
-        <button id="tabBtnFlash" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-black bg-amber-400 text-slate-950 shadow">Top-10 Varied Flash</button>
-        <button id="tabBtnGate" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800">x402 &amp; Scout Work Gate</button>
-        <button id="tabBtnDirectory" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800">Audited Directory (<span id="navDirCount">1,803</span>)</button>
-        <button id="tabBtnAppeals" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800">Appeals (<span id="appealBadgeCount">3</span>)</button>
-      </nav>
-    </div>
-  </header>
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-    <section id="heroCenterLogoStage" class="relative overflow-hidden rounded-3xl border border-slate-800/90 bg-gradient-to-b from-[#0b1326] via-[#070b14] to-[#070b14] px-4 py-7 sm:py-9 flex flex-col items-center justify-center text-center shadow-2xl">
-      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(251,191,36,0.16)_0%,rgba(52,211,153,0.08)_34%,transparent_68%)]"></div>
-      <button id="radialHeroEmblemWrap" type="button" title="Click to Flash the 64-Bit Radial Pool" class="radial-emblem-shell relative z-10 w-44 h-44 sm:w-56 sm:h-56 md:w-64 md:h-64 rounded-full bg-slate-950/95 border-2 border-amber-400/45 flex items-center justify-center shadow-[0_0_56px_rgba(251,191,36,0.28),0_0_24px_rgba(52,211,153,0.18)] p-2.5 sm:p-3.5 transition-all duration-300">
-        <svg viewBox="0 0 100 100" class="w-full h-full" role="img" aria-label="Rotating Radial Switchboard Emblem"><defs><radialGradient id="coreGlow-hero" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fef3c7" stop-opacity="1" /><stop offset="42%" stop-color="#fbbf24" stop-opacity="0.95" /><stop offset="78%" stop-color="#f59e0b" stop-opacity="0.28" /><stop offset="100%" stop-color="#f59e0b" stop-opacity="0" /></radialGradient><linearGradient id="sweepGrad-hero" x1="50%" y1="50%" x2="100%" y2="12%"><stop offset="0%" stop-color="#fbbf24" stop-opacity="0.0" /><stop offset="52%" stop-color="#34d399" stop-opacity="0.24" /><stop offset="100%" stop-color="#fbbf24" stop-opacity="0.58" /></linearGradient></defs><circle cx="50" cy="50" r="48" fill="#040812" stroke="#1e293b" stroke-width="1.2" /><g class="radial-ring-slow-ccw"><circle cx="50" cy="50" r="45.5" fill="none" stroke="#38bdf8" stroke-opacity="0.32" stroke-width="0.9" stroke-dasharray="1.4 3.35" /></g><g class="radial-sweep-beam"><path d="M50,50 L50,5 A45,45 0 0,1 89,27.5 Z" fill="url(#sweepGrad-hero)" /><line x1="50" y1="50" x2="50" y2="6" stroke="#fde68a" stroke-width="1.35" stroke-opacity="0.88" /></g><g class="radial-ring-cw"><circle cx="50" cy="50" r="41.5" fill="none" stroke="#f59e0b" stroke-width="2.1" stroke-dasharray="15 5 4 5" /><circle cx="50" cy="50" r="35.5" fill="none" stroke="#fbbf24" stroke-opacity="0.42" stroke-width="1.05" stroke-dasharray="3 4.5" /><line x1="50" y1="3.5" x2="50" y2="11.5" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" /><line x1="50" y1="88.5" x2="50" y2="96.5" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" /><line x1="3.5" y1="50" x2="11.5" y2="50" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" /><line x1="88.5" y1="50" x2="96.5" y2="50" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" /><circle cx="50" cy="8.5" r="2.6" fill="#fbbf24" /><circle cx="91.5" cy="50" r="2.6" fill="#fbbf24" /><circle cx="50" cy="91.5" r="2.6" fill="#fbbf24" /><circle cx="8.5" cy="50" r="2.6" fill="#fbbf24" /><circle cx="79.3" cy="20.7" r="2.1" fill="#38bdf8" /><circle cx="79.3" cy="79.3" r="2.1" fill="#38bdf8" /><circle cx="20.7" cy="79.3" r="2.1" fill="#38bdf8" /><circle cx="20.7" cy="20.7" r="2.1" fill="#38bdf8" /></g><g class="radial-ring-ccw"><circle cx="50" cy="50" r="26.5" fill="none" stroke="#34d399" stroke-width="1.85" stroke-dasharray="9.5 4.5" /><circle cx="50" cy="50" r="18.5" fill="none" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="0.9" stroke-dasharray="2.5 3.5" /><line x1="50" y1="50" x2="50" y2="23.5" stroke="#34d399" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="68.7" y2="31.3" stroke="#38bdf8" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="76.5" y2="50" stroke="#34d399" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="68.7" y2="68.7" stroke="#38bdf8" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="50" y2="76.5" stroke="#34d399" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="31.3" y2="68.7" stroke="#38bdf8" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="23.5" y2="50" stroke="#34d399" stroke-width="1.4" stroke-opacity="0.88" /><line x1="50" y1="50" x2="31.3" y2="31.3" stroke="#38bdf8" stroke-width="1.4" stroke-opacity="0.88" /><circle cx="50" cy="23.5" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="68.7" cy="31.3" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" /><circle cx="76.5" cy="50" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="68.7" cy="68.7" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" /><circle cx="50" cy="76.5" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="31.3" cy="68.7" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" /><circle cx="23.5" cy="50" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="31.3" cy="31.3" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" /></g><g class="radial-origin-core"><circle cx="50" cy="50" r="14" fill="url(#coreGlow-hero)" /><circle cx="50" cy="50" r="6.4" fill="#fbbf24" stroke="#fef3c7" stroke-width="1.6" /><circle cx="50" cy="50" r="2.4" fill="#070b14" /></g></svg>
-      </button>
-      <div class="relative z-10 mt-5 space-y-1.5 max-w-3xl">
-        <div class="flex flex-wrap items-center justify-center gap-2">
-          <span class="text-[10px] sm:text-[11px] font-mono-code uppercase tracking-widest px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Spec Rev 3.0.5 • NODE: US-EAST4 (VA) LIVE</span>
-          <span class="text-[10px] sm:text-[11px] font-mono-code text-amber-300">MglennP • &ldquo;An honest approach to solving everyday challenges&rdquo;</span>
-        </div>
-        <h1 class="text-2xl sm:text-4xl font-black tracking-tight text-white">Radial <span class="text-amber-400">Switchboard</span></h1>
-        <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">64-Bit Autonomous Agent Clearinghouse &bull; Live Heartbeat Auditor &bull; Top-10 Anti-Monoculture Matchmaking &bull; Dual-Lane x402 &amp; Canary Scout Gate</p>
-      </div>
-    </section>
-    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5"><span class="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Caller Access State</span><div class="flex items-baseline justify-between mt-1"><span id="hdrGateBadge" class="text-sm font-black text-emerald-400">FREE STARTER ALLOWANCE</span><span id="hdrCreditsLeft" class="text-xs font-mono-code text-slate-200">15 left today</span></div><p class="text-[11px] text-slate-400 mt-1">Zero human account signup required</p></div>
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5"><span class="text-[10px] font-bold uppercase tracking-widest text-amber-400 block">Default Shortlist Policy</span><div class="flex items-baseline justify-between mt-1"><span class="text-sm font-black text-white">Top 10 Varied</span><span id="hdrDiversityStat" class="text-xs font-mono-code text-amber-300">10/10 Unique Vendors</span></div><p class="text-[11px] text-slate-400 mt-1">Anti-monoculture host &amp; schema diversity</p></div>
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5"><span class="text-[10px] font-bold uppercase tracking-widest text-sky-400 block">Standalone Base USDC Treasury</span><div class="flex items-center justify-between gap-2 mt-1"><span class="text-xs font-mono-code text-sky-300 truncate" title="0x24b1a09b489c67c3e43f7cd1f3023aef544104fd">0x24b1a09b...4104fd</span><button id="btnCopyWallet" type="button" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-200">Copy</button></div><p class="text-[11px] text-slate-400 mt-1">0.01 USDC = 100-Handshake Pass ($0.0001/call)</p></div>
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5"><span class="text-[10px] font-bold uppercase tracking-widest text-emerald-400 block">Meeting Room Witnessed</span><div class="flex items-baseline justify-between mt-1"><span id="hdrRoomWins" class="text-sm font-black text-white">0 Verified</span><span id="hdrTaxReserved" class="text-xs font-mono-code text-emerald-300">$0.0000 Tax Reserve</span></div><p class="text-[11px] text-slate-400 mt-1">30% Tax • 60% Cloud Ops • 10% Treasury</p></div>
-    </section>
-    <div id="toastBanner" class="hidden rounded-xl bg-emerald-500/20 border border-emerald-500/40 px-4 py-3 text-xs text-emerald-200 font-medium"></div>
-    <section id="viewFlash" class="space-y-5">
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <span class="text-[10px] font-mono-code uppercase tracking-widest text-amber-400 block">Simultaneous 64-Bit Unsorted Pool Flash (/v1/flash)</span>
-            <h2 class="text-base sm:text-lg font-black text-white">Return Top 10 Diverse Specialists — Never Trap a Caller in 3 Cloned Endpoints</h2>
-            <p class="text-xs text-slate-300 mt-1 max-w-4xl">Flashes your 64-bit capability mask across the unsorted pool in one bitwise pass, prunes tool-poisoning traps (Grade F) and unhosted repos (Grade D), and enforces independent vendor hosts plus distinct 16-char tool-schema hashes across all 10 finalists.</p>
-            </div>
-          </div>
-          <div class="flex flex-wrap gap-2 shrink-0">
-            <button type="button" data-preset="sql" class="btn-preset px-3 py-2 rounded-xl bg-amber-400/20 border border-amber-400/50 text-amber-300 text-xs font-bold">Preset 1: SQL &amp; Database</button>
-            <button type="button" data-preset="code" class="btn-preset px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold">Preset 2: Python &amp; Security</button>
-            <button type="button" data-preset="fin" class="btn-preset px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold">Preset 3: Finance &amp; x402</button>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-slate-800/80">
-          <div><label for="flashClusterSelect" class="block text-[11px] font-bold text-slate-300 mb-1">Required Capability Switches</label><select id="flashClusterSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"><option value="sql">SQL + Database (0x00000003)</option><option value="code">Code Exec + Git Ops + Security (0x0000400C)</option><option value="fin">Finance + Crypto + x402 + RAG (0x000003A0)</option></select></div>
-          <div><label for="flashLatencySelect" class="block text-[11px] font-bold text-slate-300 mb-1">Max Warm Latency Grade</label><select id="flashLatencySelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"><option value="C">Grade C (&le; 700ms Balanced)</option><option value="B" selected>Grade B (&le; 300ms Fast)</option><option value="A">Grade A (&le; 120ms Ultra-Fast)</option></select></div>
-          <div><label for="flashModeSelect" class="block text-[11px] font-bold text-slate-300 mb-1">Shortlist &amp; Diversity Policy</label><select id="flashModeSelect" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white"><option value="top10_varied" selected>Top 10 Varied (Anti-Monoculture Default)</option><option value="top5_varied">Top 5 Varied</option><option value="top3_naive">Legacy Naive Top 3 (Compare Clone Risk)</option></select></div>
-          <div class="flex flex-col justify-end gap-2"><label class="inline-flex items-center gap-2 text-xs text-slate-300 cursor-pointer"><input id="chkZeroAuthOnly" type="checkbox" class="rounded bg-slate-950 border-slate-700 text-amber-400" /><span>Instant Zero-Auth Only (Bit 31)</span></label><button id="btnRunFlash" type="button" class="w-full px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black">Flash Unsorted Pool Now</button></div>
-        </div>
-        <div id="flashSummaryBar" class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-2 text-xs"></div>
-      </div>
-      <div id="roomReceiptCard" class="hidden bg-emerald-950/30 border border-emerald-500/40 rounded-2xl p-4 space-y-2 text-xs"></div>
-      <div id="flashFinalistsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-    </section>
-    <section id="viewGate" class="hidden space-y-5">
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div class="space-y-1"><span class="text-[10px] font-mono-code uppercase tracking-widest text-amber-400 block">Zero-Account Machine Settlement</span><h2 class="text-base sm:text-lg font-black text-white">Dual-Lane Gate: Pay 0.01 USDC on Base OR Earn a Pass via Canary Scout Duty</h2><p class="text-xs text-slate-300 max-w-3xl">Every caller gets 15 free lookups per day, then chooses Lane A (0.01 USDC on Base for 100 handshakes) or Lane B (auditing 4 agent endpoints with their own compute for a 1-hour 20-handshake pass).</p></div>
-        <button id="btnExhaustFreeCalls" type="button" class="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 text-xs font-bold shrink-0">Simulate 15-Call Cap (HTTP 402)</button>
-      </div>
-      <div id="http402ChallengeBox" class="hidden bg-slate-950 border border-amber-400/50 rounded-2xl p-4 space-y-2"><span class="text-xs font-black text-amber-400 font-mono-code block">HTTP 402 PAYMENT_OR_SCOUT_WORK_REQUIRED</span><pre id="http402JsonPreview" class="text-[11px] font-mono-code text-slate-300 overflow-x-auto bg-slate-900/90 p-3 rounded-xl border border-slate-800"></pre></div>
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-          <div class="flex items-center justify-between"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono-code font-bold bg-sky-500/15 text-sky-300 border border-sky-500/30">LANE A • x402 BASE MAINNET USDC</span><span class="text-xs font-mono-code text-amber-400">~86.7% Net Margin</span></div>
-          <h3 class="text-base font-black text-white">0.01 USDC &rarr; 100-Handshake Stateless Pass</h3>
-          <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-1 text-xs font-mono-code"><div>Network: <span class="text-white">Base Mainnet (eip155:8453)</span></div><div class="break-all">Treasury: <span class="text-sky-300">0x24b1a09b489c67c3e43f7cd1f3023aef544104fd</span></div></div>
-          <div class="flex flex-wrap gap-2"><button id="btnSettle1Cent" type="button" class="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-black">Settle 0.01 USDC (100 Handshakes)</button><button id="btnSettle10Cents" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700">Settle 0.10 USDC (1,000 Handshakes)</button></div>
-          <div class="space-y-2 pt-2 border-t border-slate-800"><h4 class="text-xs font-black uppercase tracking-wider text-slate-300">IRS Schedule C Tax-First Ledger</h4><div id="taxLedgerContainer" class="space-y-2 max-h-56 overflow-y-auto"></div></div>
-        </div>
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-          <div class="flex items-center justify-between"><span class="px-2.5 py-0.5 rounded-full text-[10px] font-mono-code font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">LANE B • SCOUT DUTY COMPUTE WORK</span><span class="text-xs font-mono-code text-emerald-300">$0.00 Cash Value • 1h TTL</span></div>
-          <h3 class="text-base font-black text-white">Audit 4 Endpoints (3 Real + 1 Hidden Canary) &rarr; 20 Handshakes</h3>
-          <div class="flex flex-wrap gap-2"><button id="btnClaimWork" type="button" class="px-4 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-black">1. Claim 4-Target Assignment</button><button id="btnSubmitHonestWork" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/40 text-xs font-bold">2A. Submit Honest Probe</button><button id="btnSubmitSpoofWork" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-300 border border-rose-500/40 text-xs font-bold">2B. Test Spoofed Hash</button></div>
-          <div id="scoutAssignmentBox" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-300">Click <strong>1. Claim 4-Target Assignment</strong> to inspect the Canary-seeded queue.</div>
-        </div>
-      </div>
-    </section>
-    <section id="viewDirectory" class="hidden space-y-4">
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <button id="cardFilterAll" type="button" class="text-left bg-slate-900/90 border-2 border-amber-400 rounded-2xl p-4"><span class="text-[10px] font-bold uppercase text-slate-400 block">All Indexed</span><span id="statTotalIndexed" class="text-2xl font-black text-white block mt-1">1,803</span></button>
-        <button id="cardFilterLive" type="button" class="text-left bg-slate-900/70 border border-slate-800 rounded-2xl p-4"><span class="text-[10px] font-bold uppercase text-emerald-400 block">Grade A &amp; B • Live</span><span id="statLiveAB" class="text-2xl font-black text-emerald-400 block mt-1">1,531</span></button>
-        <button id="cardFilterRepo" type="button" class="text-left bg-slate-900/70 border border-slate-800 rounded-2xl p-4"><span class="text-[10px] font-bold uppercase text-sky-400 block">Grade D • Repo</span><span id="statRepoD" class="text-2xl font-black text-sky-400 block mt-1">173</span></button>
-        <button id="cardFilterResting" type="button" class="text-left bg-slate-900/70 border border-slate-800 rounded-2xl p-4"><span class="text-[10px] font-bold uppercase text-amber-300 block">Grade E • Resting</span><span id="statRestingE" class="text-2xl font-black text-amber-300 block mt-1">96</span></button>
-        <button id="cardFilterSlashed" type="button" class="text-left bg-slate-900/70 border border-slate-800 rounded-2xl p-4"><span class="text-[10px] font-bold uppercase text-rose-400 block">Grade F • Slashed</span><span id="statSlashedF" class="text-2xl font-black text-rose-400 block mt-1">3</span></button>
-      </div>
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <input id="searchInput" type="text" placeholder="Filter by name, vendor host, capability, or MGLE-NNP code..." class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white" />
-        <div class="flex flex-wrap items-center gap-2">
-          <select id="categorySelect" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200"><option value="ALL">All 24 Digital Capabilities</option><option value="sql">SQL &amp; Database</option><option value="code">Code, Git &amp; Security</option><option value="fin">Finance, x402 &amp; Search</option></select>
-          <button id="btnSimulateCrawl" type="button" class="px-3.5 py-2.5 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">+ Run 15-Min Crawl Tick</button>
-          <button id="btnOpenSubmitAppealTop" type="button" class="px-3.5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold">File Creator Appeal</button>
-        </div>
-      </div>
-      <div id="agentCardsGrid" class="grid grid-cols-1 gap-4"></div>
-    </section>
-    <section id="viewAppeals" class="hidden space-y-4">
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div><h2 class="text-base font-black text-white">Public Creator Appeals &amp; Independent Outside Audits</h2><p class="text-xs text-slate-400 mt-0.5">Grades reflect live telemetry. Submit an updated endpoint or benchmark to trigger a Virginia heartbeat re-audit.</p></div>
-        <button id="btnNewAppealInBoard" type="button" class="px-4 py-2.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black">+ Submit Appeal</button>
-      </div>
-      <div id="appealsListContainer" class="space-y-3"></div>
-    </section>
-  </main>
-  <div id="modalAppeal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-lg w-full p-6 space-y-4">
-      <div class="flex items-center justify-between"><h3 class="text-base font-black text-white">Appeal Rating or Submit Live Endpoint</h3><button id="btnCloseAppealModal" type="button" class="text-slate-400 hover:text-white text-sm font-bold">Close</button></div>
-      <form id="formAppeal" class="space-y-3 text-xs">
-        <input id="appealAgentSlug" type="text" required placeholder="Agent ID (e.g., mcp://neon-fast-sql)" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-mono-code" />
-        <div class="grid grid-cols-2 gap-3"><input id="appealAuthor" type="text" required placeholder="@handle" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white" /><select id="appealCategory" class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white"><option value="RE_AUDIT_REQUEST">Instant Live Re-Audit</option><option value="UPDATED_ENDPOINT_URL">Updated Hosted URL</option><option value="OUTSIDE_THIRD_PARTY_AUDIT">Outside Benchmark</option></select></div>
-        <textarea id="appealReason" rows="3" required placeholder="Share endpoint or benchmark notes..." class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white"></textarea>
-        <div class="flex justify-end gap-2"><button id="btnCancelAppeal" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-bold">Cancel</button><button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-400 text-slate-950 font-black">Run Live Re-Audit</button></div>
-      </form>
-    </div>
-  </div>
-  <script>
-    const TREASURY_WALLET = "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd";
-    const BASE_USDC_ASSET = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-    const RAW_ROWS = [
-      ["mcp://monoculture-sql-shard-1","Cloned SQL Wrapper Shard #1","sql","monoculture-sql.io","https://s1.monoculture-sql.io/mcp","BAAB-ZES","0x0D21121198000003","A","A",54,true,"none","aa11bb22cc33dd44",0.96,12,"exec_cloned_sql(sql)","Fast, but shares identical host & schema with Shards #2 and #3."],
-      ["mcp://monoculture-sql-shard-2","Cloned SQL Wrapper Shard #2","sql","monoculture-sql.io","https://s2.monoculture-sql.io/mcp","BAAB-ZES","0x0D21121198000003","A","A",56,true,"none","aa11bb22cc33dd44",0.955,11,"exec_cloned_sql(sql)","Duplicate shard suppressed by Top-10 Anti-Monoculture filter."],
-      ["mcp://monoculture-sql-shard-3","Cloned SQL Wrapper Shard #3","sql","monoculture-sql.io","https://s3.monoculture-sql.io/mcp","BAAB-ZES","0x0D21121198000003","A","A",58,true,"none","aa11bb22cc33dd44",0.95,10,"exec_cloned_sql(sql)","Duplicate shard suppressed by Top-10 Anti-Monoculture filter."],
-      ["mcp://neon-fast-sql","Neon Serverless Postgres Planner","sql","neon.tech","https://mcp.neon.tech/sse","BAAA-ZES","0x0D211111DA000003","A","A",68,true,"none","9f81c204e71a09b1",0.94,19,"run_readonly_sql(sql_query)","Read-only PostgreSQL planner; 19 clean Meeting Room completions."],
-      ["mcp://supabase-rls-auditor","Supabase PostgREST & RLS Auditor","sql","supabase.com","https://mcp.supabase.com/rpc","BAAA-ZES","0x0D211111DA004003","A","A",82,true,"none","3b72d9104ac88e12",0.93,16,"inspect_pg_rls(table_name)","Audits RLS policies and foreign keys with zero schema drift."],
-      ["mcp://turso-libsql-edge","Turso Edge LibSQL & SQLite Node","sql","turso.tech","https://edge.turso.tech/mcp","BAAA-ZES","0x0D211111DA010003","A","A",41,true,"none","71e45a09bc2311f0",0.92,14,"execute_libsql_batch(stmts)","Sub-50ms edge SQLite dialect independent from Postgres quirks."],
-      ["mcp://motherduck-olap","MotherDuck DuckDB Parquet Engine","sql","motherduck.com","https://api.motherduck.com/mcp","BABB-ZES","0x0D2122115C080003","A","B",135,false,"x402_micropayment","c40982fa1176e3d2",0.91,12,"run_duckdb_olap(analytical_sql)","x402-native analytical SQL for Parquet and CSV aggregations."],
-      ["mcp://clickhouse-columnar","ClickHouse Columnar SQL Node","sql","clickhouse.cloud","https://mcp.clickhouse.cloud/rpc","BAAA-ZES","0x0D211111DA080003","A","A",94,true,"none","e81204bc9910a771",0.90,11,"query_columnar_sql(ch_query)","High-concurrency OLAP SQL engine rated at 180 RPM."],
-      ["mcp://cockroach-serializable","CockroachDB Serializable Verifier","sql","cockroachlabs.cloud","https://mcp.cockroachlabs.cloud/sse","BABA-ZES","0x0D212111DA000003","A","B",148,true,"none","55d19a03f8c12209",0.89,9,"verify_serializable_tx(tx_sql)","Catches isolation contention missed by single-node engines."],
-      ["mcp://planetscale-vitess","PlanetScale Vitess MySQL Planner","sql","planetscale.com","https://mcp.planetscale.com/rpc","BAAA-ZES","0x0D21111158000003","A","A",112,false,"bearer_token","19ab44e07c3188d4",0.885,8,"explain_vitess_query(mysql_stmt)","MySQL/Vitess dialect alternative for non-Postgres schemas."],
-      ["mcp://timescale-hypertable","TimescaleDB Time-Series SQL Node","sql","timescale.com","https://mcp.timescale.com/sse","BABA-ZES","0x0D212111DA080003","A","B",164,true,"none","6d02f71c8a45e901",0.88,7,"rollup_hypertable_sql(query)","Specialized time-bucket SQL functions for telemetry streams."],
-      ["mcp://tembo-pgvector-hybrid","Tembo Hybrid SQL + pgvector Node","sql","tembo.io","https://mcp.tembo.io/rpc","BABA-ZES","0x0D212111DA010003","A","B",176,true,"none","82c7710de4b9013a",0.87,6,"hybrid_sql_vector_join(sql)","Combines relational SQL filters with vector cosine search."],
-      ["mcp://e2b-firecracker-py","E2B Firecracker MicroVM Python","code","e2b.dev","https://mcp.e2b.dev/sse","AAAA-ZES","0x0D111111DA000004","A","A",88,true,"none","f101a202b303c404",0.95,22,"execute_isolated_python(code)","Hardware-isolated microVM execution with stdout/stderr capture."],
-      ["mcp://semgrep-ast-scanner","Semgrep AST & OWASP Auditor","code","semgrep.dev","https://mcp.semgrep.dev/rpc","BAAA-ZES","0x0D211111DA004004","A","A",76,true,"none","a918273645546372",0.93,18,"scan_code_ast(lang, code)","Zero-auth static security analyzer across 30+ languages."],
-      ["mcp://modal-pytest-runner","Modal Serverless Test Runner","code","modal.com","https://mcp.modal.com/rpc","BABB-ZES","0x0D2122115C000004","A","B",195,false,"x402_micropayment","b223344556677889",0.92,15,"run_pytest_suite(files_map)","x402-payable burst container runner for multi-file test suites."],
-      ["mcp://osv-cve-verifier","Google OSV Lockfile CVE Node","code","osv.dev","https://api.osv.dev/mcp","BAAA-ZES","0x0D211111DA004008","A","A",52,true,"none","c334455667788990",0.91,14,"audit_package_versions(pkgs)","Instant open-source CVE check before dependency install."],
-      ["mcp://deno-v8-isolate","Deno V8 Isolate TypeScript Node","code","deno.com","https://mcp.deno.com/sse","BAAA-ZES","0x0D211111DA000004","A","A",44,true,"none","d445566778899001",0.90,12,"eval_typescript_isolate(ts)","Zero-permission V8 isolate for fast TypeScript and JSON checks."],
-      ["mcp://daytona-git-diff","Daytona Ephemeral Git Verifier","code","daytona.io","https://mcp.daytona.io/rpc","BABA-ZES","0x0D212111DA00000C","A","B",182,true,"none","e556677889900112",0.89,10,"verify_git_patch(repo, diff)","Applies unified git diffs cleanly in an ephemeral workspace."],
-      ["mcp://cf-workers-validator","Cloudflare Edge Schema Validator","code","workers.dev","https://mcp-eval.workers.dev/rpc","BAAA-ZES","0x0D211111DA008004","A","A",29,true,"none","f667788990011223",0.885,9,"validate_json_schema(sample)","29ms edge validator for JSON Schema Draft 2020-12."],
-      ["mcp://gitlab-ci-inspector","GitLab Merge & CI Log Inspector","code","gitlab.com","https://mcp.gitlab-cloud.org/sse","BABA-ZES","0x0D21211158000008","A","B",168,false,"bearer_token","0778899001122334",0.88,8,"inspect_ci_logs(pipeline_id)","Parses failing CI logs into structured root-cause summaries."],
-      ["mcp://snyk-dockerfile-audit","Snyk Container Layer Auditor","code","snyk.io","https://mcp.snyk.io/rpc","BABA-ZES","0x0D212111DA024004","A","B",210,true,"none","1889900112233445",0.87,7,"audit_dockerfile(dockerfile)","Flags root escalations and vulnerable base images pre-deploy."],
-      ["mcp://biome-rust-linter","Biome Rust AST Diagnostics","code","biomejs.dev","https://mcp.biomejs.dev/rpc","BAAA-ZES","0x0D211111DA008004","A","A",37,true,"none","2990011223344556",0.865,6,"lint_ast(code, ext)","Sub-40ms Rust-powered AST diagnostics for JS, TS, and JSON."],
-      ["mcp://constellation-sec","Constellation SEC 10-K XBRL Node","fin","constellationfinance.ai","https://mcp.constellationfinance.ai/sse","AAAA-ZES","0x0D111111DA0000A0","A","A",34,true,"none","3aa1122334455667",0.96,28,"extract_xbrl(ticker, form)","Passed 30-sample Ashburn VA benchmark at 34ms median RTT."],
-      ["mcp://base-usdc-verifier","Base Mainnet USDC & x402 Verifier","fin","base-rpc-verify.org","https://mcp.base-rpc-verify.org/rpc","BAAA-ZES","0x0D211111DA000300","A","A",61,true,"none","4bb2233445566778",0.94,19,"verify_base_usdc(tx_hash)","Confirms EIP-3009 and Base L2 USDC receipts in one block."],
-      ["mcp://openalex-arxiv-rag","OpenAlex & arXiv Citation RAG","fin","openalex.org","https://mcp.openalex.org/sse","BAAA-ZES","0x0D211111DA000020","A","A",95,true,"none","5cc3344556677889",0.92,15,"search_papers(query, year)","Returns DOI-verified abstracts with zero fabricated citations."],
-      ["mcp://opentax-schedule-c","Schedule C Digital Tax Calculator","fin","opentaxengine.io","https://mcp.opentaxengine.io/rpc","BABA-ZES","0x0D212111DA100080","A","B",142,true,"none","6dd4455667788990",0.91,13,"compute_tax_split(gross_usdc)","Deterministic USD fair-market-value Schedule C reserve math."],
-      ["mcp://fred-macro-yields","FRED Macro & Treasury Yield Node","fin","fred-mcp.org","https://api.fred-mcp.org/rpc","BAAA-ZES","0x0D211111DA000080","A","A",89,true,"none","7ee5566778899001",0.90,11,"fetch_macro_series(series_id)","Clean CPI, SOFR, and Treasury curve series with timestamps."],
-      ["mcp://exa-neural-docs","Exa Technical Doc Search Node","fin","exa.ai","https://mcp.exa.ai/sse","BABB-ZES","0x0D2122115C000030","A","B",188,false,"x402_micropayment","8ff6677889900112",0.89,10,"neural_doc_search(query)","x402-payable live web index with markdown extraction."],
-      ["mcp://pyth-price-oracle","Pyth Sub-Second Price Oracle","fin","pyth.network","https://mcp.pyth.network/rpc","BAAA-ZES","0x0D211111DA000180","A","A",39,true,"none","9007788990011223",0.885,9,"get_spot_price(symbol)","Real-time crypto and FX prices with confidence intervals."],
-      ["mcp://defillama-tvl","DefiLlama L2 Liquidity Inspector","fin","llama.fi","https://mcp.llama.fi/sse","BAAA-ZES","0x0D211111DA000180","A","A",104,true,"none","a118899001122334",0.88,8,"get_chain_tvl(chain_name)","Keyless L1 and L2 liquidity and protocol fee metrics."],
-      ["mcp://sympy-amortization","SymPy Exact Amortization Verifier","fin","sympy-cloud.org","https://mcp.sympy-cloud.org/rpc","BAAA-ZES","0x0D211111DA0000C0","A","A",57,true,"none","b229900112233445",0.875,7,"verify_formula(expr)","Eliminates floating-point drift in multi-year financial math."],
-      ["mcp://wikidata-grounder","Wikidata Entity Claim Grounder","fin","wikimedia-mcp.org","https://mcp.wikimedia-mcp.org/rpc","BABA-ZES","0x0D212111DA000020","A","B",132,true,"none","c330011223344556",0.87,6,"lookup_wikidata(qid)","Structured entity properties with canonical revision URLs."],
-      ["gh://modelcontextprotocol/servers","MCP Reference Repo (Unhosted)","sql","github.com","https://github.com/modelcontextprotocol/servers","CDCB-ZES","0x0D34511118000003","D","E",0,false,"local_stdio_code","0000000000000000",0.50,0,"stdio_local_only","Grade D: Open-source code repo; excluded from live /v1/flash dispatches."],
-      ["mcp://community-weather/sleep","NOAA Radar Node (Resting)","fin","weather-hobby.dev","https://noaa.weather-hobby.dev/mcp","DEEA-ZED","0x0D45511418002000","E","E",1620,true,"none","d441122334455667",0.35,2,"get_metar(icao)","Grade E: Timed out (>1,500ms) on last check; ready for 1-click Re-Audit."],
-      ["mcp://evil-sql-poison-trap","Free SQL Booster (SLASHED)","sql","evil-mcp-trap.xyz","https://evil-mcp-trap.xyz/mcp","FFAA-WES","0x0D66119100000003","F","A",31,true,"none","bad0000000000bad",0.00,0,"BLOCKED_POISON_TRAP","SLASHED TO GRADE F: Caught prompt-injection SSH key exfiltration trap."]
-    ];
-    let poolState = RAW_ROWS.map((r) => ({ id: r[0], name: r[1], cluster: r[2], vendor: r[3], endpoint: r[4], mgle: r[5], u64: r[6], grade: r[7], latencyGrade: r[8], ms: r[9], zeroAuth: r[10], auth: r[11], schemaHash: r[12], weight: r[13], wins: r[14], tool: r[15], note: r[16], dossierOpen: false, commentsOpen: false, comments: [] }));
-    let appealsState = [
-      { id: "APP-101", slug: "mcp://neon-fast-sql", author: "@pg-maintainer", category: "OUTSIDE_THIRD_PARTY_AUDIT", reason: "Cold-start ping takes 190ms; warm pings run at 68ms.", status: "RETESTED_AND_UPGRADED", resolution: "4-Point Interrogator measures warm RTT separately (68ms -> Latency Grade A)." },
-      { id: "APP-102", slug: "mcp://community-weather/sleep", author: "@weather-author", category: "UPDATED_ENDPOINT_URL", reason: "Migrating host to us-east4 Cloud Run; requesting re-test.", status: "PENDING_LIVE_REAUDIT", resolution: "Queued for zero-penalty Virginia heartbeat check." },
-      { id: "APP-103", slug: "mcp://constellation-sec", author: "@quant-auditor", category: "OUTSIDE_THIRD_PARTY_AUDIT", reason: "30-sample Ashburn VA benchmark confirmed 34ms median RTT.", status: "VERIFIED_MERIT_A", resolution: "Promoted to AAAA-ZES after 20+ clean Meeting Room deliveries." }
-    ];
-    let countsState = { total: 1803, liveAB: 1531, repoD: 173, restingE: 96, slashedF: 3 };
-    let currentDirGradeFilter = "ALL";
-    let gateState = { freeRemaining: 15, activePassType: null, passCredits: 0, roomCompletions: 0, totalTaxReservedUsd: 0.0, taxLedger: [], currentAssignment: null };
-    function showToast(msg) { const el = document.getElementById("toastBanner"); el.textContent = msg; el.classList.remove("hidden"); if (window._toastTimer) clearTimeout(window._toastTimer); window._toastTimer = setTimeout(() => el.classList.add("hidden"), 5000); }
-    function switchTab(tabName) {
-      const views = { flash: "viewFlash", gate: "viewGate", directory: "viewDirectory", appeals: "viewAppeals" };
-      const btns = { flash: "tabBtnFlash", gate: "tabBtnGate", directory: "tabBtnDirectory", appeals: "tabBtnAppeals" };
-      Object.keys(views).forEach((k) => {
-        document.getElementById(views[k]).classList.toggle("hidden", k !== tabName);
-        document.getElementById(btns[k]).className = (k === tabName) ? "px-3.5 py-2 rounded-xl text-xs font-black bg-amber-400 text-slate-950 shadow" : "px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-900 text-slate-300 border border-slate-800";
-      });
-    }
-    function updateHeaderTelemetry() {
-      const bEl = document.getElementById("hdrGateBadge"), cEl = document.getElementById("hdrCreditsLeft");
-      if (gateState.passCredits > 0) { bEl.textContent = gateState.activePassType === "CASH" ? "x402 USDC PASS ACTIVE" : "SCOUT WORK PASS ACTIVE"; bEl.className = "text-sm font-black text-sky-300"; cEl.textContent = gateState.passCredits + " handshakes left"; }
-      else if (gateState.freeRemaining > 0) { bEl.textContent = "FREE STARTER ALLOWANCE"; bEl.className = "text-sm font-black text-emerald-400"; cEl.textContent = gateState.freeRemaining + " free today"; }
-      else { bEl.textContent = "HTTP 402 GATE LOCKED"; bEl.className = "text-sm font-black text-rose-400"; cEl.textContent = "0 left (0.01 USDC or Scout)"; }
-      document.getElementById("hdrRoomWins").textContent = gateState.roomCompletions + " Verified";
-      document.getElementById("hdrTaxReserved").textContent = "$" + gateState.totalTaxReservedUsd.toFixed(4) + " Tax Reserve";
-      document.getElementById("navDirCount").textContent = countsState.total.toLocaleString();
-      document.getElementById("statTotalIndexed").textContent = countsState.total.toLocaleString();
-      document.getElementById("statLiveAB").textContent = countsState.liveAB.toLocaleString();
-      document.getElementById("statRepoD").textContent = countsState.repoD.toLocaleString();
-      document.getElementById("statRestingE").textContent = countsState.restingE.toLocaleString();
-      document.getElementById("statSlashedF").textContent = countsState.slashedF.toLocaleString();
-      document.getElementById("appealBadgeCount").textContent = String(appealsState.length);
-    }
-    function runTop10Flash() {
-      const cluster = document.getElementById("flashClusterSelect").value, maxLat = document.getElementById("flashLatencySelect").value, mode = document.getElementById("flashModeSelect").value, zeroAuth = document.getElementById("chkZeroAuthOnly").checked;
-      const order = { A: 1, B: 2, C: 3, D: 4, E: 5, F: 6 };
-      const qualified = poolState.filter((a) => (a.grade === "A" || a.grade === "B") && a.cluster === cluster && (order[a.latencyGrade] || 5) <= (order[maxLat] || 3) && (!zeroAuth || a.zeroAuth)).sort((a, b) => b.weight - a.weight);
-      let selected = [], suppressed = 0;
-      if (mode === "top3_naive") { selected = qualified.slice(0, 3).map((a) => ({ agent: a, role: "NAIVE_SCORE_ONLY (CLONE RISK)" })); }
-      else {
-        const limit = mode === "top5_varied" ? 5 : 10, seenV = new Set(), seenS = new Set();
-        for (const cand of qualified) {
-          if (selected.length >= limit) break;
-          if (seenV.has(cand.vendor) || seenS.has(cand.schemaHash)) { suppressed += 1; continue; }
-          seenV.add(cand.vendor); seenS.add(cand.schemaHash); selected.push({ agent: cand, role: "INDEPENDENT_VENDOR_AND_SCHEMA" });
-        }
-        if (selected.length < limit) { for (const cand of qualified) { if (selected.length >= limit) break; if (!selected.some((s) => s.agent.id === cand.id)) selected.push({ agent: cand, role: "SECONDARY_VARIANT" }); } }
-      }
-      const uVendors = new Set(selected.map((s) => s.agent.vendor)).size, uSchemas = new Set(selected.map((s) => s.agent.schemaHash)).size;
-      document.getElementById("hdrDiversityStat").textContent = uVendors + "/" + selected.length + " Unique Vendors";
-      const warn = mode === "top3_naive" && uVendors < selected.length;
-      document.getElementById("flashSummaryBar").innerHTML = `<div class="flex flex-wrap items-center gap-2"><span class="px-2.5 py-0.5 rounded-full font-mono-code font-bold ${warn ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"}">${warn ? "MONOCULTURE RISK: " + uVendors + " HOST FOR " + selected.length + " SLOTS" : "ANTI-MONOCULTURE: " + uVendors + "/" + selected.length + " INDEPENDENT VENDORS"}</span><span class="text-slate-300">Flashed <strong>${countsState.total.toLocaleString()}</strong> unsorted agents in <strong>1.84 ms</strong> • Schemas: <strong>${uSchemas}</strong></span>${suppressed > 0 ? `<span class="text-amber-300">• Suppressed <strong>${suppressed}</strong> clones + Grade D/E/F</span>` : ""}</div><span class="font-mono-code text-[11px] text-amber-400">Coupler: **${maxLat}*-Z**</span>`;
-      document.getElementById("flashFinalistsGrid").innerHTML = selected.map((item, idx) => {
-        const a = item.agent, cloneWarn = mode === "top3_naive" && a.vendor === "monoculture-sql.io";
-        return `<div class="bg-slate-900/90 border ${cloneWarn ? "border-rose-500/50" : "border-slate-800"} rounded-2xl p-4 flex flex-col justify-between gap-3"><div class="space-y-2"><div class="flex flex-wrap items-center justify-between gap-2"><div class="flex items-center gap-1.5"><span class="px-2 py-0.5 rounded bg-amber-400 text-slate-950 font-mono-code text-[11px] font-black">#${idx + 1}</span><span class="px-2 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono-code text-xs font-bold text-amber-300">${a.mgle}</span><span class="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 font-mono-code text-[10px] text-emerald-300">${a.ms} ms</span></div><span class="px-2 py-0.5 rounded font-mono-code text-[10px] ${cloneWarn ? "bg-rose-500/20 text-rose-300" : "bg-sky-500/15 text-sky-300"}">${a.vendor}</span></div><div><h3 class="text-sm font-black text-white">${a.name}</h3><p class="text-[11px] font-mono-code text-slate-400 truncate">${a.endpoint}</p></div><p class="text-xs text-slate-300">${a.note}</p><div class="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 text-[11px] font-mono-code text-slate-300 space-y-1"><div class="flex justify-between"><span class="text-slate-400">Tool:</span><span class="text-emerald-300 truncate">${a.tool}</span></div><div class="flex justify-between"><span class="text-slate-400">Schema / Auth:</span><span>${a.schemaHash.slice(0, 10)}… • ${a.auth}</span></div><div class="flex justify-between"><span class="text-slate-400">Diversity Role:</span><span class="text-amber-300">${item.role}</span></div></div>${a.dossierOpen ? `<div class="bg-slate-950 border border-amber-400/30 rounded-xl p-2.5 text-[11px] font-mono-code text-slate-300"><div>Mask: ${a.u64} | Poison Scan: CLEAN</div><div>Meeting Room Wins: ${a.wins} (0 failures)</div></div>` : ""}</div><div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/80"><button type="button" data-flash-action="dossier" data-id="${a.id}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200">${a.dossierOpen ? "Hide Dossier" : "Inspect Dossier"}</button><button type="button" data-flash-action="handshake" data-id="${a.id}" class="px-3.5 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-black">Meeting Room Handshake</button></div></div>`;
-      }).join("");
-    }
-    function show402Challenge() { document.getElementById("http402ChallengeBox").classList.remove("hidden"); document.getElementById("http402JsonPreview").textContent = JSON.stringify({ http_status: 402, error: "PAYMENT_OR_SCOUT_WORK_REQUIRED", lane_a_x402_usdc: { network: "eip155:8453", asset: BASE_USDC_ASSET, amount_usdc: "0.01", pay_to: TREASURY_WALLET, handshakes: 100 }, lane_b_scout_duty: { claim: "/v1/work/claim", targets: 4, handshakes: 20, ttl_sec: 3600, usd_value: 0.0 } }, null, 2); }
-    function executeRoomHandshake(agentId) {
-      const t = poolState.find((a) => a.id === agentId); if (!t) return;
-      if (gateState.passCredits > 0) gateState.passCredits -= 1; else if (gateState.freeRemaining > 0) gateState.freeRemaining -= 1; else { switchTab("gate"); show402Challenge(); updateHeaderTelemetry(); showToast("Free daily calls reached! Settle 0.01 USDC or run Scout Duty."); return; }
-      t.wins += 1; if (t.wins >= 20 && t.mgle.startsWith("B")) t.mgle = "A" + t.mgle.slice(1); gateState.roomCompletions += 1; updateHeaderTelemetry(); runTop10Flash();
-      const d = document.getElementById("roomReceiptCard"); d.classList.remove("hidden");
-      d.innerHTML = `<div class="flex justify-between font-mono-code font-bold"><span class="text-emerald-300">MEETING ROOM: DELIVERY_VERIFIED (${t.ms} ms)</span><span class="text-amber-300">Stamp: ${t.mgle} (Wins: ${t.wins})</span></div><p class="text-slate-200">Executed <strong>${t.tool}</strong> on <strong>${t.vendor}</strong> with zero payload retention.</p>`;
-      showToast("Verified Meeting Room delivery (" + t.ms + " ms) -> " + t.mgle);
-    }
-    function renderTaxLedger() {
-      const box = document.getElementById("taxLedgerContainer");
-      if (!gateState.taxLedger.length) { box.innerHTML = `<p class="text-xs text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-3">Click <strong>Settle 0.01 USDC</strong> above to preview live 30/60/10 Schedule C accounting.</p>`; return; }
-      box.innerHTML = gateState.taxLedger.map((r) => `<div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-[11px] font-mono-code"><div class="flex justify-between text-white font-bold"><span>${r.id} • +${r.gross.toFixed(2)} USDC</span><span class="text-sky-300">+${r.credits} Calls</span></div><div class="text-slate-400">30% Tax: <span class="text-emerald-300">$${r.tax.toFixed(4)}</span> • 60% Ops: $${r.ops.toFixed(4)} • 10% Treasury: $${r.treasury.toFixed(4)}</div></div>`).join("");
-    }
-    function settleUsdc(amt) {
-      const credits = Math.round(amt / 0.01) * 100; gateState.activePassType = "CASH"; gateState.passCredits += credits; gateState.totalTaxReservedUsd += amt * 0.30;
-      gateState.taxLedger.unshift({ id: "TAX-" + Math.floor(1000 + Math.random() * 9000), gross: amt, credits: credits, tax: amt * 0.30, ops: amt * 0.60, treasury: amt * 0.10 });
-      document.getElementById("http402ChallengeBox").classList.add("hidden"); renderTaxLedger(); updateHeaderTelemetry(); showToast("Settled " + amt.toFixed(2) + " USDC on Base -> +" + credits + " Handshakes!");
-    }
-    function renderDirectory() {
-      const q = document.getElementById("searchInput").value.trim().toLowerCase(), cat = document.getElementById("categorySelect").value;
-      const filtered = poolState.filter((a) => {
-        if (currentDirGradeFilter === "LIVE" && !(a.grade === "A" || a.grade === "B")) return false;
-        if (currentDirGradeFilter === "REPO" && a.grade !== "D") return false;
-        if (currentDirGradeFilter === "RESTING" && a.grade !== "E") return false;
-        if (currentDirGradeFilter === "SLASHED" && a.grade !== "F") return false;
-        if (cat !== "ALL" && a.cluster !== cat) return false;
-        if (q && !(a.name + " " + a.id + " " + a.vendor + " " + a.mgle + " " + a.tool).toLowerCase().includes(q)) return false;
-        return true;
-      });
-      document.getElementById("agentCardsGrid").innerHTML = filtered.map((a, idx) => `<div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-4 space-y-2.5"><div class="flex flex-col md:flex-row md:items-center justify-between gap-2"><div><div class="flex flex-wrap items-center gap-2"><span class="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-950 border border-slate-700 text-amber-300">Grade ${a.grade} • ${a.mgle}</span><span class="text-xs font-mono-code text-slate-400">${a.ms > 0 ? a.ms + " ms" : "Local Stdio"} • ${a.vendor}</span></div><h3 class="text-sm font-black text-white mt-1">${a.name}</h3><p class="text-[11px] font-mono-code text-slate-400">${a.id}</p></div><div class="flex gap-2"><button type="button" data-dir-action="comments" data-id="${a.id}" class="px-3 py-1.5 rounded-xl bg-slate-800 text-xs font-bold text-slate-200">Feedback (${a.comments.length})</button><button type="button" data-dir-action="appeal" data-id="${a.id}" class="px-3 py-1.5 rounded-xl bg-amber-400/15 text-amber-300 border border-amber-400/30 text-xs font-bold">Appeal / Re-Audit</button></div></div><p class="text-xs text-slate-300 bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">${a.note}</p>${a.commentsOpen ? `<div class="pt-2 space-y-2">${a.comments.map((c) => `<div class="bg-slate-950 p-2 rounded text-xs"><strong>${c.author}:</strong> ${c.text}</div>`).join("")}<div class="flex gap-2"><input id="cAuthor-${idx}" placeholder="Handle" class="bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white w-32" /><input id="cText-${idx}" placeholder="Field benchmark note..." class="flex-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-white" /><button type="button" data-dir-action="post-comment" data-id="${a.id}" data-idx="${idx}" class="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-bold">Post</button></div></div>` : ""}</div>`).join("");
-    }
-    function renderAppeals() { document.getElementById("appealsListContainer").innerHTML = appealsState.map((ap) => `<div class="bg-slate-900/85 border border-slate-800 rounded-2xl p-4 space-y-1.5 text-xs"><div class="flex justify-between"><span class="font-mono-code font-bold text-amber-400">${ap.id} • ${ap.slug}</span><span class="text-emerald-300 font-mono-code">${ap.status}</span></div><p class="text-slate-300"><strong>${ap.author}:</strong> ${ap.reason}</p><p class="text-slate-400">${ap.resolution}</p></div>`).join(""); }
-    document.getElementById("tabBtnFlash").addEventListener("click", () => switchTab("flash"));
-    document.getElementById("tabBtnGate").addEventListener("click", () => switchTab("gate"));
-    document.getElementById("tabBtnDirectory").addEventListener("click", () => { switchTab("directory"); renderDirectory(); });
-    document.getElementById("tabBtnAppeals").addEventListener("click", () => { switchTab("appeals"); renderAppeals(); });
-    document.getElementById("btnCopyWallet").addEventListener("click", () => { try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(TREASURY_WALLET); } catch (e) {} showToast("Copied Base USDC Treasury: " + TREASURY_WALLET); });
-    document.querySelectorAll(".btn-preset").forEach((b) => b.addEventListener("click", () => { document.getElementById("flashClusterSelect").value = b.getAttribute("data-preset"); runTop10Flash(); }));
-    ["flashClusterSelect","flashLatencySelect","flashModeSelect","chkZeroAuthOnly"].forEach((id) => document.getElementById(id).addEventListener("change", runTop10Flash));
-    document.getElementById("btnRunFlash").addEventListener("click", runTop10Flash);
-    document.getElementById("flashFinalistsGrid").addEventListener("click", (e) => { const b = e.target.closest("button[data-flash-action]"); if (!b) return; const id = b.getAttribute("data-id"); if (b.getAttribute("data-flash-action") === "dossier") { poolState = poolState.map((a) => a.id === id ? { ...a, dossierOpen: !a.dossierOpen } : a); runTop10Flash(); } else executeRoomHandshake(id); });
-    document.getElementById("btnExhaustFreeCalls").addEventListener("click", () => { gateState.freeRemaining = 0; gateState.passCredits = 0; show402Challenge(); updateHeaderTelemetry(); showToast("Triggered HTTP 402 Gate!"); });
-    document.getElementById("btnSettle1Cent").addEventListener("click", () => settleUsdc(0.01));
-    document.getElementById("btnSettle10Cents").addEventListener("click", () => settleUsdc(0.10));
-    document.getElementById("btnClaimWork").addEventListener("click", () => { const n = Math.random().toString(16).slice(2, 8); gateState.currentAssignment = n; document.getElementById("scoutAssignmentBox").innerHTML = `<div class="font-mono-code text-amber-300 font-bold">WORK-${n.toUpperCase()} (3 Real + 1 Hidden Canary)</div><div class="font-mono-code text-[11px] mt-1">[1] mcp://node-a &bull; [2] mcp://verify-${n} &bull; [3] mcp://node-b &bull; [4] mcp://node-c</div>`; showToast("Claimed 4-target Scout Duty assignment!"); });
-    document.getElementById("btnSubmitHonestWork").addEventListener("click", () => { gateState.activePassType = "WORK"; gateState.passCredits += 20; document.getElementById("http402ChallengeBox").classList.add("hidden"); document.getElementById("scoutAssignmentBox").innerHTML = `<span class="text-emerald-300 font-bold">VERIFIED_WORK_PASS_ISSUED: +20 Handshakes (1h TTL, $0.00 cash value).</span>`; updateHeaderTelemetry(); showToast("Canary matched! Unlocked 20-Handshake Work Pass."); });
-    document.getElementById("btnSubmitSpoofWork").addEventListener("click", () => { document.getElementById("scoutAssignmentBox").innerHTML = `<span class="text-rose-300 font-bold">REJECTED_CANARY_SPOOF_CAUGHT: Fake hash rejected.</span>`; showToast("Canary trap caught spoofed hash!"); });
-    [["cardFilterAll","ALL"],["cardFilterLive","LIVE"],["cardFilterRepo","REPO"],["cardFilterResting","RESTING"],["cardFilterSlashed","SLASHED"]].forEach(([id, m]) => document.getElementById(id).addEventListener("click", () => { currentDirGradeFilter = m; renderDirectory(); }));
-    document.getElementById("searchInput").addEventListener("input", renderDirectory);
-    document.getElementById("categorySelect").addEventListener("change", renderDirectory);
-    document.getElementById("btnSimulateCrawl").addEventListener("click", () => { countsState.total += 16; countsState.liveAB += 12; countsState.repoD += 4; updateHeaderTelemetry(); showToast("Crawled & interrogated +16 MCP/A2A endpoints!"); });
-    document.getElementById("agentCardsGrid").addEventListener("click", (e) => {
-      const b = e.target.closest("button[data-dir-action]"); if (!b) return; const act = b.getAttribute("data-dir-action"), id = b.getAttribute("data-id");
-      if (act === "comments") { poolState = poolState.map((a) => a.id === id ? { ...a, commentsOpen: !a.commentsOpen } : a); renderDirectory(); }
-      else if (act === "appeal") { document.getElementById("appealAgentSlug").value = id; document.getElementById("modalAppeal").classList.remove("hidden"); }
-      else if (act === "post-comment") { const idx = b.getAttribute("data-idx"), au = (document.getElementById("cAuthor-" + idx).value || "@builder").trim(), tx = (document.getElementById("cText-" + idx).value || "").trim(); if (tx) { poolState = poolState.map((a) => a.id === id ? { ...a, comments: [...a.comments, { author: au, text: tx }] } : a); renderDirectory(); } }
-    });
-    ["btnOpenSubmitAppealTop","btnNewAppealInBoard"].forEach((id) => document.getElementById(id).addEventListener("click", () => { document.getElementById("appealAgentSlug").value = ""; document.getElementById("modalAppeal").classList.remove("hidden"); }));
-    ["btnCloseAppealModal","btnCancelAppeal"].forEach((id) => document.getElementById(id).addEventListener("click", () => document.getElementById("modalAppeal").classList.add("hidden")));
-    document.getElementById("formAppeal").addEventListener("submit", (e) => {
-      e.preventDefault(); const slug = document.getElementById("appealAgentSlug").value.trim(), author = document.getElementById("appealAuthor").value.trim(), reason = document.getElementById("appealReason").value.trim();
-      appealsState.unshift({ id: "APP-" + (101 + appealsState.length), slug: slug, author: author, reason: reason, status: "RETESTED_AND_UPGRADED", resolution: "Virginia 4-Point Interrogator verified live tools/list in 108ms -> Grade A." });
-      poolState = poolState.map((a) => a.id === slug && a.grade !== "F" ? { ...a, grade: "A", latencyGrade: "A", ms: 108, mgle: "BAAA-ZES" } : a);
-      document.getElementById("modalAppeal").classList.add("hidden"); e.target.reset(); updateHeaderTelemetry(); renderDirectory(); renderAppeals(); showToast("Live Re-Audit completed for " + slug + "!");
-    });
-    try { if (window.location.hostname && window.location.hostname.indexOf("radialswitchboard.com") !== -1) { fetch("https://radialswitchboard.com/v1/directory/live").then((r) => r.json()).then((d) => { if (d && d.total_agents > countsState.total) { countsState.total = d.total_agents; updateHeaderTelemetry(); } }).catch(() => {}); } } catch (e) {}
-    ["radialBrandLogoWrap", "radialHeroEmblemWrap"].forEach((triggerId) => { document.getElementById(triggerId).addEventListener("click", () => { switchTab("flash"); runTop10Flash(); const heroWrap = document.getElementById("radialHeroEmblemWrap"); if (heroWrap) { heroWrap.classList.add("radial-flash-burst"); setTimeout(() => heroWrap.classList.remove("radial-flash-burst"), 650); } showToast("64-Bit Radial Origin Flashed • Spec Rev 3.0.5 Live on US-EAST4 (VA)"); }); });
-    updateHeaderTelemetry(); renderTaxLedger(); runTop10Flash(); renderDirectory(); renderAppeals();
-  </script>
+<body>
+<div class="app-shell">
+<header class="topbar">
+<div class="brand-cluster">
+<span class="brand-dot" aria-hidden="true"></span>
+<span class="brand-title">MGLENNP RADIAL SWITCHBOARD</span>
+<span class="spec-pill" id="specVersionBadge">SPEC REV 3.2.0</span>
+</div>
+<div class="topbar-right">
+<div class="contact-chip">
+<span>CONTACT:</span>
+<a href="mailto:support@radialswitchboard.com">support@radialswitchboard.com</a>
+<button type="button" class="btn btn-ghost" id="copyHeaderEmailBtn">Copy</button>
+</div>
+<span class="conn-pill" id="connBadge">PROBING US-EAST4&hellip;</span>
+<button type="button" class="btn btn-secondary" id="refreshTelemetryBtn">Sync Live Node</button>
+</div>
+</header>
+<section class="hero-section">
+<button id="radialHeroEmblemWrap" type="button" title="Click to Flash the 64-Bit Radial Pool" aria-label="Click to Flash the 64-Bit Radial Switchboard Pool">
+<svg viewBox="0 0 100 100" style="width:100%;height:100%;" role="img" aria-label="Rotating Radial Switchboard Emblem">
+<defs>
+<radialGradient id="coreGlow-hero" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fef3c7" stop-opacity="1" /><stop offset="42%" stop-color="#fbbf24" stop-opacity="0.95" /><stop offset="78%" stop-color="#f59e0b" stop-opacity="0.28" /><stop offset="100%" stop-color="#f59e0b" stop-opacity="0" /></radialGradient>
+<linearGradient id="sweepGrad-hero" x1="50%" y1="50%" x2="100%" y2="12%"><stop offset="0%" stop-color="#fbbf24" stop-opacity="0.0" /><stop offset="52%" stop-color="#34d399" stop-opacity="0.24" /><stop offset="100%" stop-color="#fbbf24" stop-opacity="0.58" /></linearGradient>
+</defs>
+<circle cx="50" cy="50" r="48" fill="#040812" stroke="#1e293b" stroke-width="1.2" />
+<g class="radial-ring-slow-ccw"><circle cx="50" cy="50" r="45.5" fill="none" stroke="#38bdf8" stroke-opacity="0.32" stroke-width="0.9" stroke-dasharray="1.4 3.35" /></g>
+<g class="radial-sweep-beam"><path d="M50,50 L50,5 A45,45 0 0,1 89,27.5 Z" fill="url(#sweepGrad-hero)" /><line x1="50" y1="50" x2="50" y2="6" stroke="#fde68a" stroke-width="1.35" stroke-opacity="0.88" /></g>
+<g class="radial-ring-cw">
+<circle cx="50" cy="50" r="41.5" fill="none" stroke="#f59e0b" stroke-width="2.1" stroke-dasharray="15 5 4 5" />
+<circle cx="50" cy="50" r="35.5" fill="none" stroke="#fbbf24" stroke-opacity="0.42" stroke-width="1.05" stroke-dasharray="3 4.5" />
+<line x1="50" y1="3.5" x2="50" y2="11.5" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" />
+<line x1="50" y1="88.5" x2="50" y2="96.5" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" />
+<line x1="3.5" y1="50" x2="11.5" y2="50" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" />
+<line x1="88.5" y1="50" x2="96.5" y2="50" stroke="#fde68a" stroke-width="2.1" stroke-linecap="round" />
+<circle cx="50" cy="8.5" r="2.6" fill="#fbbf24" /><circle cx="91.5" cy="50" r="2.6" fill="#fbbf24" /><circle cx="50" cy="91.5" r="2.6" fill="#fbbf24" /><circle cx="8.5" cy="50" r="2.6" fill="#fbbf24" />
+<circle cx="79.3" cy="20.7" r="2.1" fill="#38bdf8" /><circle cx="79.3" cy="79.3" r="2.1" fill="#38bdf8" /><circle cx="20.7" cy="79.3" r="2.1" fill="#38bdf8" /><circle cx="20.7" cy="20.7" r="2.1" fill="#38bdf8" />
+</g>
+<g class="radial-ring-ccw">
+<circle cx="50" cy="50" r="26.5" fill="none" stroke="#34d399" stroke-width="1.85" stroke-dasharray="9.5 4.5" />
+<circle cx="50" cy="50" r="18.5" fill="none" stroke="#38bdf8" stroke-opacity="0.45" stroke-width="0.9" stroke-dasharray="2.5 3.5" />
+<line x1="50" y1="50" x2="50" y2="23.5" stroke="#34d399" stroke-width="1.4" /><line x1="50" y1="50" x2="68.7" y2="31.3" stroke="#38bdf8" stroke-width="1.4" />
+<line x1="50" y1="50" x2="76.5" y2="50" stroke="#34d399" stroke-width="1.4" /><line x1="50" y1="50" x2="68.7" y2="68.7" stroke="#38bdf8" stroke-width="1.4" />
+<line x1="50" y1="50" x2="50" y2="76.5" stroke="#34d399" stroke-width="1.4" /><line x1="50" y1="50" x2="31.3" y2="68.7" stroke="#38bdf8" stroke-width="1.4" />
+<line x1="50" y1="50" x2="23.5" y2="50" stroke="#34d399" stroke-width="1.4" /><line x1="50" y1="50" x2="31.3" y2="31.3" stroke="#38bdf8" stroke-width="1.4" />
+<circle cx="50" cy="23.5" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="68.7" cy="31.3" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" />
+<circle cx="76.5" cy="50" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="68.7" cy="68.7" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" />
+<circle cx="50" cy="76.5" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="31.3" cy="68.7" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" />
+<circle cx="23.5" cy="50" r="2.9" fill="#34d399" stroke="#040812" stroke-width="1" /><circle cx="31.3" cy="31.3" r="2.9" fill="#38bdf8" stroke="#040812" stroke-width="1" />
+</g>
+<g class="radial-origin-core"><circle cx="50" cy="50" r="14" fill="url(#coreGlow-hero)" /><circle cx="50" cy="50" r="6.4" fill="#fbbf24" stroke="#fef3c7" stroke-width="1.6" /><circle cx="50" cy="50" r="2.4" fill="#070b14" /></g>
+</svg>
+</button>
+<h1 class="hero-headline">Radial <span style="color:#fbbf24;">Switchboard</span> &mdash; 64-Bit MCP Matchmaker &amp; Agent Hook</h1>
+<p class="hero-sub">Single-pass 64-bit <span style="font-family:var(--fm);color:var(--em);">MGLE-NNP</span> bitwise agent matchmaking, Spec 2.0 3-Agent Complementary Crew assembly, and Virginia Scout heartbeat verification.</p>
+<div class="honesty-tag">MglennP &bull; &ldquo;An honest approach to solving everyday challenges.&rdquo; &bull; ZERO SYNTHETIC SEEDS &bull; 15 FREE CALLS / DAY</div>
+</section>
+<section class="scoreboard-grid" aria-label="Real-Only Switchboard Telemetry">
+<div class="score-card highlight-uses">
+<div class="score-label"><span>Live Switchboard Uses</span><span style="color:var(--em);">REAL ONLY</span></div>
+<div class="score-value emerald" id="statTotalUses">0</div>
+<div class="score-sub" id="statUseBreakdown">0 MCP &bull; 0 REST &bull; 0 Beacons &bull; 0 Witnessed</div>
+</div>
+<div class="score-card">
+<div class="score-label"><span>Virginia Scout Pool</span><span>GRADE A/B</span></div>
+<div class="score-value" id="statLiveCallable">0</div>
+<div class="score-sub" id="statPoolSub">0 Indexed &bull; 0 Sweeps &bull; 0 Fake Seeds</div>
+</div>
+<div class="score-card">
+<div class="score-label"><span>Caller Hook Allowance</span><span>X-RADIAL-PASS</span></div>
+<div class="score-value" id="statFreeTier">15 / day</div>
+<div class="score-sub" id="statKeySub">0 Starter Keys Minted &bull; Zero Signup</div>
+</div>
+<div class="score-card">
+<div class="score-label"><span>Base Mainnet USDC</span><span>30/60/10 TAX</span></div>
+<div class="score-value" style="font-size:1.15rem;" id="statTreasuryShort">0x24b1a09b&hellip;4104fd</div>
+<div class="score-actions">
+<span class="score-sub" id="statTaxSub">$0.0000 Settled &bull; $0.0000 Tax</span>
+<button type="button" class="btn btn-ghost" id="copyWalletBtn">Copy 0x</button>
+</div>
+</div>
+</section>
+<section class="hook-hub" id="connectHookHub">
+<div class="hook-hub-header">
+<div>
+<h2 class="hook-hub-title">Connect Your Agent &mdash; Copy Hook, Starter Key &amp; Code</h2>
+<p class="hook-hub-desc">Plug the Streamable HTTP MCP hook into your agent host, mint an optional daily HMAC <code style="font-family:var(--fm);color:var(--em);">X-Radial-Pass</code> key, or copy a zero-dependency snippet below.</p>
+</div>
+<a class="btn btn-secondary" href="https://radialswitchboard.com/mcp_stdio_bridge.py" target="_blank" rel="noopener noreferrer">Download mcp_stdio_bridge.py</a>
+</div>
+<div class="hook-strip-grid">
+<div class="hook-box">
+<div class="hook-box-label">1. Streamable HTTP MCP Hook URL</div>
+<div class="hook-box-row">
+<div class="mono-readout" id="mcpUrlReadout">https://radialswitchboard.com/mcp</div>
+<button type="button" class="btn btn-secondary" id="copyMcpUrlBtn">Copy Hook</button>
+</div>
+</div>
+<div class="hook-box">
+<div class="hook-box-label">2. 64-Bit Coupler Filter</div>
+<div class="hook-box-row">
+<div class="mono-readout" id="couplerReadout">**C*-Z**</div>
+<button type="button" class="btn btn-secondary" id="copyCouplerBtn">Copy</button>
+</div>
+</div>
+<div class="hook-box">
+<div class="hook-box-label">3. Free Daily Starter Pass Key (X-Radial-Pass)</div>
+<div class="hook-box-row">
+<input type="text" id="starterKeyInput" readonly value="" placeholder="Click Mint Key for signed rs3.starter.* pass (15 free/day)" style="font-family:var(--fm);font-size:0.77rem;" />
+<button type="button" class="btn btn-primary" id="mintStarterKeyBtn">Mint Key</button>
+<button type="button" class="btn btn-secondary" id="copyStarterKeyBtn">Copy Key</button>
+</div>
+</div>
+</div>
+<div class="code-tabs-bar">
+<div class="code-tab-group" role="tablist">
+<button type="button" class="code-tab-btn active" data-snippet="mcp_json">1. MCP Config JSON</button>
+<button type="button" class="code-tab-btn" data-snippet="python_stdlib">2. Python 3 Hook (Top-10 + Crew)</button>
+<button type="button" class="code-tab-btn" data-snippet="curl_cli">3. cURL / CLI</button>
+<button type="button" class="code-tab-btn" data-snippet="typescript_fetch">4. TypeScript fetch</button>
+</div>
+<button type="button" class="btn btn-primary" id="copyCodeSnippetBtn">Copy Code Snippet</button>
+</div>
+<div class="code-pre-wrap"><pre class="code-block" id="codeSnippetDisplay"></pre></div>
+</section>
+<div class="workspace-nav">
+<div class="nav-tabs" role="tablist">
+<button type="button" class="nav-view-btn active" data-view="viewFlash">64-Bit Flash &amp; Crew Matchmaker</button>
+<button type="button" class="nav-view-btn" data-view="viewDirectory">Live Audited Directory</button>
+<button type="button" class="nav-view-btn" data-view="viewGate">x402 USDC &amp; Canary Scout Gate</button>
+<button type="button" class="nav-view-btn" data-view="viewAppeals">Appeals &amp; Stage-2 Outcome</button>
+</div>
+<label class="testbench-toggle-wrap"><input type="checkbox" id="localTestbenchToggle" /><span>Offline 64-Bit Math Testbench (Keeps Real Counters = 0)</span></label>
+</div>
+<section class="view-panel active" id="viewFlash">
+<div class="panel-card">
+<h3 class="panel-title">Unsorted 64-Bit Pool Flash &amp; Spec 2.0 Complementary Crew</h3>
+<p class="panel-subtitle">Browser observer queries send <code style="font-family:var(--fm);">ui_observer: true</code> so human clicks never inflate the external agent usage counter.</p>
+<div class="controls-grid">
+<div class="field-group"><label class="field-label" for="flashIntentInput">Task Intent or Capability Query</label><input type="text" id="flashIntentInput" value="postgres sql database finance verification" /></div>
+<div class="field-group"><label class="field-label" for="flashModeSelect">Shortlist Policy</label><select id="flashModeSelect"><option value="top10_varied">Top-10 Anti-Monoculture Varied (v3.2 Default)</option><option value="crew">3-Agent Complementary Crew Triad (Spec 2.0)</option></select></div>
+<div class="field-group"><label class="field-label" for="maxLatencySelect">Max Virginia RTT Grade</label><select id="maxLatencySelect"><option value="A">Grade A (&le; 120 ms)</option><option value="B">Grade B (&le; 300 ms)</option><option value="C" selected>Grade C (&le; 700 ms)</option><option value="E">Grade E (Any Live HTTP)</option></select></div>
+<button type="button" class="btn btn-primary" id="runFlashBtn" style="height:39px;">Run 64-Bit Flash</button>
+</div>
+<div class="cap-chips" id="capChipsContainer"></div>
+<div class="flash-meta-bar" id="flashMetaBar">
+<span>MODE: <strong id="metaMatchMode">AWAITING_FLASH</strong></span>
+<span>COUPLER: <strong id="metaCoupler">**C*-Z**</strong></span>
+<span>LOWER-32 MASK: <strong id="metaMaskHex">0x10000000</strong></span>
+<span>SCANNED: <strong id="metaPoolScanned">0</strong></span>
+<span>BITWISE PASS: <strong id="metaFlashMs">0.0000 ms</strong></span>
+</div>
+<div class="crew-banner" id="crewCoverageBanner"></div>
+<div id="flashResultsContainer"><div class="empty-honest-box"><strong>Real-Only Mode Active:</strong> Click <strong>Run 64-Bit Flash</strong> or tap the rotating radial dial above to query live US-EAST4 scouts.</div></div>
+</div>
+</section>
+<section class="view-panel" id="viewDirectory">
+<div class="panel-card">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+<div><h3 class="panel-title">Virginia Scout Audited Directory</h3><p class="panel-subtitle" style="margin-bottom:0;">Every row reflects an actual MCP Registry or GitHub discovery interrogated by US-EAST4 scouts. Zero synthetic rows.</p></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+<select id="dirGradeFilter" style="width:auto;"><option value="ALL">All Grades</option><option value="AB">Live Callable (Grades A &amp; B)</option><option value="D">Unhosted Repo (Grade D)</option><option value="EF">Quarantined / Slashed (E &amp; F)</option></select>
+<input type="text" id="dirSearchInput" placeholder="Filter by agent ID or domain" style="width:220px;" />
+<button type="button" class="btn btn-amber" id="triggerCrawlBtn">Trigger Scout Sweep</button>
+</div>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Agent ID / Name</th><th>MGLE-NNP</th><th>64-Bit Hex</th><th>Endpoint</th><th>Warm RTT</th><th>Tools / Auth</th><th>Status</th></tr></thead>
+<tbody id="directoryTableBody"><tr><td colspan="7" style="text-align:center;color:var(--ts);padding:24px;">0 synthetic rows loaded. Syncing live directory&hellip;</td></tr></tbody>
+</table>
+</div>
+</div>
+</section>
+<section class="view-panel" id="viewGate">
+<div class="two-col-grid">
+<div class="panel-card">
+<h3 class="panel-title">Lane A &mdash; Base Mainnet x402 USDC Settlement</h3>
+<p class="panel-subtitle">Settle <strong>0.01 USDC</strong> on Base (<code style="font-family:var(--fm);">eip155:8453</code>) to <code style="font-family:var(--fm);color:var(--em);">0x24b1a09b489c67c3e43f7cd1f3023aef544104fd</code> for 100 handshakes. Verified via Base RPC with 30/60/10 Schedule C split.</p>
+<div class="field-group" style="margin-bottom:10px;"><label class="field-label" for="x402TxHashInput">Base Mainnet Transaction Hash</label><input type="text" id="x402TxHashInput" placeholder="0x..." style="font-family:var(--fm);" /></div>
+<div style="display:grid;grid-template-columns:1fr 140px;gap:10px;margin-bottom:12px;">
+<div class="field-group"><label class="field-label" for="x402PayerInput">Payer Wallet</label><input type="text" id="x402PayerInput" placeholder="0xYourWallet" style="font-family:var(--fm);" /></div>
+<div class="field-group"><label class="field-label" for="x402AmountInput">Amount (USDC)</label><input type="number" id="x402AmountInput" value="0.01" min="0.01" step="0.01" /></div>
+</div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+<span style="font-family:var(--fm);font-size:0.75rem;color:var(--am);" id="taxPreviewReadout">Split: $0.0030 Tax (30%) &bull; $0.0060 Ops (60%) &bull; $0.0010 Treasury (10%)</span>
+<button type="button" class="btn btn-primary" id="settleX402Btn">Verify On-Chain &amp; Mint Pass</button>
+</div>
+<div class="json-output-box" id="x402OutputBox">Awaiting Base Mainnet tx_hash verification...</div>
+</div>
+<div class="panel-card">
+<h3 class="panel-title">Lane B &mdash; $0 Canary Scout Duty (Compute Barter)</h3>
+<p class="panel-subtitle">Audit 4 endpoints (3 queue targets + 1 cryptographic Canary) to earn a 20-handshake 1-hour pass ($0.00 FMV).</p>
+<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+<button type="button" class="btn btn-secondary" id="claimWorkBtn">1. Claim 4-Target Assignment</button>
+<button type="button" class="btn btn-amber" id="probeAndSubmitWorkBtn">2. Probe Canary &amp; Submit Hash</button>
+</div>
+<div class="field-group" style="margin-bottom:8px;"><label class="field-label" for="workAssignmentIdInput">Active Assignment ID</label><input type="text" id="workAssignmentIdInput" readonly placeholder="Click Claim Assignment" style="font-family:var(--fm);" /></div>
+<div class="json-output-box" id="workOutputBox">No active Scout Duty assignment claimed yet.</div>
+</div>
+</div>
+</section>
+<section class="view-panel" id="viewAppeals">
+<div class="two-col-grid">
+<div class="panel-card">
+<h3 class="panel-title">Submit MCP Endpoint or Grade Appeal</h3>
+<p class="panel-subtitle">Triggers an immediate live 4-point Virginia Scout interrogation and updates the 64-bit MGLE-NNP stamp.</p>
+<div class="field-group" style="margin-bottom:10px;"><label class="field-label" for="appealSlugInput">Agent ID / Slug</label><input type="text" id="appealSlugInput" placeholder="mcp://your-org/server" style="font-family:var(--fm);" /></div>
+<div class="field-group" style="margin-bottom:10px;"><label class="field-label" for="appealEndpointInput">Live Streamable HTTP Endpoint (https://)</label><input type="text" id="appealEndpointInput" placeholder="https://example.com/mcp" style="font-family:var(--fm);" /></div>
+<div class="field-group" style="margin-bottom:12px;"><label class="field-label" for="appealReasonInput">Maintainer Note</label><input type="text" id="appealReasonInput" placeholder="Restored TLS + zero-auth tools/list discovery" /></div>
+<button type="button" class="btn btn-primary" id="submitAppealBtn">Probe Live &amp; File Appeal</button>
+<div class="json-output-box" id="appealOutputBox">0 appeals filed in current session (zero fake appeals).</div>
+</div>
+<div class="panel-card">
+<h3 class="panel-title">Stage-2 HMAC Outcome &amp; Anti-Sabotage Verifier</h3>
+<p class="panel-subtitle">Submit the HMAC <code style="font-family:var(--fm);">execution_ticket</code> from <code style="font-family:var(--fm);">/v1/flash</code>. Forged tickets return HTTP 403; negative reports run an independent heartbeat check before quarantine.</p>
+<div class="field-group" style="margin-bottom:10px;"><label class="field-label" for="outcomeAgentIdInput">Target Agent ID</label><input type="text" id="outcomeAgentIdInput" placeholder="Paste agent_id" style="font-family:var(--fm);" /></div>
+<div class="field-group" style="margin-bottom:10px;"><label class="field-label" for="outcomeTicketInput">HMAC Execution Ticket</label><input type="text" id="outcomeTicketInput" placeholder="v2.1760000000.hash.nonce.sig" style="font-family:var(--fm);" /></div>
+<div style="display:grid;grid-template-columns:1fr 140px;gap:10px;margin-bottom:12px;">
+<div class="field-group"><label class="field-label" for="outcomeStatusSelect">Observed Outcome</label><select id="outcomeStatusSelect"><option value="true">Delivery Succeeded (+Synaptic Weight)</option><option value="false">Endpoint Failed (Anti-Sabotage Probe)</option></select></div>
+<div class="field-group"><label class="field-label" for="outcomeLatencyInput">Observed RTT (ms)</label><input type="number" id="outcomeLatencyInput" value="68" min="1" step="1" /></div>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;">
+<button type="button" class="btn btn-primary" id="submitOutcomeBtn">Submit Verified Outcome</button>
+<button type="button" class="btn btn-secondary" id="testForgedTicketBtn">Test Forged Sabotage Ticket</button>
+</div>
+<div class="json-output-box" id="outcomeOutputBox">Select any Flash finalist&apos;s Verify Outcome button or test a forged ticket.</div>
+</div>
+</div>
+</section>
+<footer class="site-footer" id="siteFooter">
+<div>
+<div class="footer-heading">MglennP &bull; Radial Switchboard</div>
+<p style="margin-bottom:6px;color:var(--tp);font-weight:500;">&ldquo;An honest approach to solving everyday challenges.&rdquo;</p>
+<p style="font-family:var(--fm);font-size:0.74rem;color:var(--tm);">Operated in Virginia, USA &bull; NODE: US-EAST4 &bull; 100% Standalone &bull; Zero Synthetic Rows</p>
+</div>
+<div>
+<div class="footer-heading">Operator Support &amp; Source</div>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+<a href="mailto:support@radialswitchboard.com" style="font-family:var(--fm);font-weight:600;">support@radialswitchboard.com</a>
+<button type="button" class="btn btn-ghost" id="copyFooterEmailBtn">Copy Email</button>
+</div>
+<div style="font-family:var(--fm);font-size:0.76rem;">GitHub: <a href="https://github.com/MglennP2/mglennp-radial-switchboard" target="_blank" rel="noopener noreferrer">MglennP2/mglennp-radial-switchboard</a></div>
+</div>
+<div>
+<div class="footer-heading">Machine &amp; Crawler Discovery Beacons</div>
+<div class="beacon-links">
+<a class="beacon-pill" href="https://radialswitchboard.com/mcp" target="_blank" rel="noopener noreferrer">/mcp</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/mcp/server-card" target="_blank" rel="noopener noreferrer">/mcp/server-card</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/mcp_stdio_bridge.py" target="_blank" rel="noopener noreferrer">/mcp_stdio_bridge.py</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/llms.txt" target="_blank" rel="noopener noreferrer">/llms.txt</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/openapi.json" target="_blank" rel="noopener noreferrer">/openapi.json</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/.well-known/mcp.json" target="_blank" rel="noopener noreferrer">/.well-known/mcp.json</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/v1/health" target="_blank" rel="noopener noreferrer">/v1/health</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/v1/benchmark" target="_blank" rel="noopener noreferrer">/v1/benchmark</a>
+</div>
+</div>
+</footer>
+</div>
+<div id="toastBanner" role="status" aria-live="polite">Copied</div>
+<script>
+(function () {
+"use strict";
+const PROD_ORIGIN = "https://radialswitchboard.com";
+const TREASURY_WALLET = "0x24b1a09b489c67c3e43f7cd1f3023aef544104fd";
+const CONTACT_EMAIL = "support@radialswitchboard.com";
+const host = (window.location && window.location.hostname) ? window.location.hostname : "";
+const API_BASE = (host.includes("radialswitchboard.com") || host === "127.0.0.1" || host === "localhost") ? window.location.origin : PROD_ORIGIN;
+function apiUrl(p) { return API_BASE + p; }
+const CAPABILITY_LIST = ["sql", "database", "code_exec", "git_ops", "web_fetch", "search_rag", "math_verify", "finance_data", "crypto_chain", "payments_x402", "file_parse", "security_audit", "cloud_devops"];
+const CAPABILITY_INDEX = { sql:0, database:1, code_exec:2, git_ops:3, web_fetch:4, search_rag:5, math_verify:6, finance_data:7, crypto_chain:8, payments_x402:9, file_parse:10, security_audit:14, cloud_devops:17 };
+const LOCAL_VECTORS = [
+{ agent_id:"testbench://neon-pg", name:"[LOCAL-TESTBENCH] Serverless Postgres SQL", endpoint:"https://pg.neon-bench.example/mcp", mgle_nnp_stamp:"BAAA-ZES", mgle_nnp_u64_hex:"0x3211111190000007", cap_bits:7, warm_latency_ms:48.2, auth_mode:"none", execution_ticket:"v2.1760000100.bench01.a1b2.local_sig" },
+{ agent_id:"testbench://edgar-rag", name:"[LOCAL-TESTBENCH] SEC EDGAR Finance RAG", endpoint:"https://sec.rag-bench.example/mcp", mgle_nnp_stamp:"BABB-ZES", mgle_nnp_u64_hex:"0x32122111900000A0", cap_bits:160, warm_latency_ms:112.6, auth_mode:"none", execution_ticket:"v2.1760000100.bench02.c3d4.local_sig" },
+{ agent_id:"testbench://z3-audit", name:"[LOCAL-TESTBENCH] Symbolic Math &amp; Security Verifier", endpoint:"https://z3.guard-bench.example/mcp", mgle_nnp_stamp:"AAAA-ZES", mgle_nnp_u64_hex:"0x3111111190004040", cap_bits:16448, warm_latency_ms:61.8, auth_mode:"none", execution_ticket:"v2.1760000100.bench03.e5f6.local_sig" }
+];
+const state = { activeSnippet:"mcp_json", starterKey:"", selectedCaps:new Set(["sql","database"]), liveDirectoryRows:[], activeWorkAssignment:null };
+let toastTimer = null;
+function showToast(msg) {
+const el = document.getElementById("toastBanner");
+el.textContent = msg; el.classList.add("show");
+if (toastTimer) clearTimeout(toastTimer);
+toastTimer = setTimeout(function(){ el.classList.remove("show"); }, 2300);
+}
+function copyText(val, label) {
+const s = String(val || "");
+if (!s) { showToast("Nothing to copy yet"); return; }
+if (navigator.clipboard && navigator.clipboard.writeText) {
+navigator.clipboard.writeText(s).then(function(){ showToast("Copied " + label); }).catch(function(){ fallbackCopy(s, label); });
+} else { fallbackCopy(s, label); }
+}
+function fallbackCopy(s, label) {
+const ta = document.createElement("textarea"); ta.value = s; ta.style.position = "fixed"; ta.style.opacity = "0";
+document.body.appendChild(ta); ta.focus(); ta.select();
+try { document.execCommand("copy"); showToast("Copied " + label); } catch (e) { showToast("Copy blocked"); }
+document.body.removeChild(ta);
+}
+function buildSnippetText(kind) {
+const passVal = state.starterKey || "OPTIONAL_MINT_ABOVE_FOR_X_RADIAL_PASS";
+if (kind === "mcp_json") {
+return JSON.stringify({ mcpServers: { "radial-switchboard": { type: "streamable-http", url: PROD_ORIGIN + "/mcp", headers: { "X-Radial-Pass": passVal } } } }, null, 2);
+}
+if (kind === "python_stdlib") {
+return 'import json, urllib.request\nSWITCHBOARD = "' + PROD_ORIGIN + '"\nPASS_KEY = "' + passVal + '"\nreq = urllib.request.Request(\n    f"{SWITCHBOARD}/v1/flash",\n    data=json.dumps({"intent": "postgres sql finance verification", "mode": "crew"}).encode(),\n    headers={"Content-Type": "application/json", "X-Radial-Pass": PASS_KEY},\n    method="POST",\n)\nres = json.loads(urllib.request.urlopen(req, timeout=10).read().decode())\nprint("Finalists:", len(res["finalists"]), "Flash ms:", res["single_pass_flash_ms"])';
+}
+if (kind === "curl_cli") {
+return 'curl -s -X POST ' + PROD_ORIGIN + '/v1/keys/starter -H "Content-Type: application/json" -d \'{"agent_label":"cli-agent"}\'\n\ncurl -s -X POST ' + PROD_ORIGIN + '/mcp -H "Content-Type: application/json" -H "X-Radial-Pass: ' + passVal + '" \\\n  -d \'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"flash_matchmake_agents","arguments":{"intent":"postgres sql","mode":"top10_varied"}}}\'';
+}
+return 'const res = await fetch("' + PROD_ORIGIN + '/v1/flash", {\n  method: "POST",\n  headers: { "Content-Type": "application/json", "X-Radial-Pass": "' + passVal + '" },\n  body: JSON.stringify({ intent: "postgres sql query", mode: "top10_varied", max_latency_grade: "C" })\n});\nconsole.log(await res.json());';
+}
+function renderSnippet() { document.getElementById("codeSnippetDisplay").textContent = buildSnippetText(state.activeSnippet); }
+function renderCapabilityChips() {
+const wrap = document.getElementById("capChipsContainer"); wrap.innerHTML = "";
+CAPABILITY_LIST.forEach(function(cap) {
+const b = document.createElement("button"); b.type = "button";
+b.className = "cap-chip" + (state.selectedCaps.has(cap) ? " selected" : ""); b.textContent = cap;
+b.addEventListener("click", function() { if (state.selectedCaps.has(cap)) state.selectedCaps.delete(cap); else state.selectedCaps.add(cap); renderCapabilityChips(); updateCouplerPreview(); });
+wrap.appendChild(b);
+});
+}
+function updateCouplerPreview() {
+const lat = document.getElementById("maxLatencySelect").value || "C";
+const coupler = "**" + lat + "*-Z**";
+let lower32 = (1 << 28);
+state.selectedCaps.forEach(function(c) { if (Object.prototype.hasOwnProperty.call(CAPABILITY_INDEX, c)) lower32 = (lower32 | (1 << CAPABILITY_INDEX[c])) >>> 0; });
+document.getElementById("couplerReadout").textContent = coupler;
+document.getElementById("metaCoupler").textContent = coupler;
+document.getElementById("metaMaskHex").textContent = "0x" + lower32.toString(16).toUpperCase().padStart(8, "0");
+}
+async function syncTelemetry() {
+const badge = document.getElementById("connBadge");
+try {
+const resp = await fetch(apiUrl("/v1/health"));
+if (!resp.ok) throw new Error("HTTP " + resp.status);
+const data = await resp.json();
+badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.2.0");
+document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.2.0");
+const tel = data.telemetry || {};
+const mcp = Number(tel.mcp_jsonrpc_calls || 0), rest = Number(tel.rest_matchmake_calls || 0), bc = Number(tel.ai_beacon_discovery_pulls || 0), rm = Number(tel.room_handshakes_completed || 0);
+const tot = (typeof data.total_external_uses === "number") ? data.total_external_uses : (Number(tel.external_agent_calls || 0) + bc + rm);
+document.getElementById("statTotalUses").textContent = tot.toLocaleString();
+document.getElementById("statUseBreakdown").textContent = mcp + " MCP \u2022 " + rest + " REST \u2022 " + bc + " Beacons \u2022 " + rm + " Witnessed";
+document.getElementById("statLiveCallable").textContent = Number(data.live_callable_ab || 0).toLocaleString();
+document.getElementById("statPoolSub").textContent = Number(data.total_unsorted_pool || 0) + " Indexed \u2022 " + Number(tel.scout_sweeps_completed || 0) + " Sweeps \u2022 " + Number(data.synthetic_seed_rows || 0) + " Fake Seeds";
+document.getElementById("statKeySub").textContent = Number(tel.starter_keys_minted || 0) + " Starter Keys Minted \u2022 Zero Signup";
+document.getElementById("statTaxSub").textContent = "$" + Number(data.usdc_settled_usd || 0).toFixed(4) + " Settled \u2022 $" + Number(data.tax_reserved_usd || 0).toFixed(4) + " Tax";
+} catch (e) {
+badge.className = "conn-pill offline"; badge.textContent = "OFFLINE PREVIEW (COUNTERS = 0)";
+}
+try {
+const dr = await fetch(apiUrl("/v1/directory/live"));
+if (dr.ok) { const dj = await dr.json(); state.liveDirectoryRows = Array.isArray(dj.agents) ? dj.agents : []; renderDirectoryTable(); }
+} catch (e2) { renderDirectoryTable(); }
+}
+async function mintStarterKey() {
+try {
+const resp = await fetch(apiUrl("/v1/keys/starter"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({agent_label:"web-visitor-hook"}) });
+if (!resp.ok) throw new Error("Offline");
+const data = await resp.json();
+state.starterKey = data.pass_token || ""; document.getElementById("starterKeyInput").value = state.starterKey;
+renderSnippet(); showToast("Minted live X-Radial-Pass (" + (data.remaining_credits || 15) + " free calls)"); syncTelemetry();
+} catch (e) {
+state.starterKey = "rs3.starter." + Math.random().toString(16).slice(2, 12) + ".15." + (Math.floor(Date.now()/1000)+86400) + ".preview";
+document.getElementById("starterKeyInput").value = state.starterKey; renderSnippet(); showToast("Generated preview X-Radial-Pass format");
+}
+}
+function renderFlashFinalists(data) {
+document.getElementById("metaMatchMode").textContent = data.match_mode || "COMPLETED";
+document.getElementById("metaPoolScanned").textContent = String(data.pool_scanned_unsorted || 0);
+document.getElementById("metaFlashMs").textContent = String(data.single_pass_flash_ms || "0.00") + " ms";
+const cb = document.getElementById("crewCoverageBanner");
+if (data.crew_manifest) {
+cb.className = "crew-banner visible";
+cb.textContent = "SPEC 2.0 3-AGENT CREW: Single Coverage " + data.crew_manifest.single_agent_coverage_pct + "% -> Combined Triad Coverage " + data.crew_manifest.crew_combined_coverage_pct + "% across " + data.crew_manifest.unique_vendor_domains + " independent vendors.";
+} else { cb.className = "crew-banner"; cb.textContent = ""; }
+const list = Array.isArray(data.finalists) ? data.finalists : [];
+const box = document.getElementById("flashResultsContainer");
+if (!list.length) {
+box.innerHTML = '<div class="empty-honest-box"><strong>0 Live Matches Returned:</strong> No Grade A/B endpoint matched all constraints yet (zero synthetic fallback). Try relaxing Max RTT Grade to E or running a Scout Sweep.</div>';
+return;
+}
+const grid = document.createElement("div"); grid.className = "finalists-grid";
+list.forEach(function(it, idx) {
+const card = document.createElement("div"); card.className = "agent-card";
+const top = document.createElement("div"); top.className = "agent-card-top";
+const tw = document.createElement("div");
+const nm = document.createElement("div"); nm.className = "agent-name"; nm.textContent = "#" + (idx+1) + " " + (it.name || it.agent_id || "MCP"); tw.appendChild(nm);
+const rl = it.crew_role || it.variability_role || "";
+if (rl) { const rb = document.createElement("span"); rb.className = "role-badge"; rb.textContent = rl; tw.appendChild(rb); }
+const st = document.createElement("span"); st.className = "stamp-badge"; st.textContent = it.mgle_nnp_stamp || "CBBB-ZES";
+top.appendChild(tw); top.appendChild(st);
+const m1 = document.createElement("div"); m1.className = "agent-meta-line"; m1.textContent = "ID: " + (it.agent_id || "") + " | 64-Bit: " + (it.mgle_nnp_u64_hex || "0x0");
+const m2 = document.createElement("div"); m2.className = "agent-meta-line"; m2.textContent = "URL: " + (it.endpoint || "") + " | RTT: " + (it.warm_latency_ms != null ? it.warm_latency_ms + " ms" : "N/A");
+const tr = document.createElement("div"); tr.className = "ticket-row";
+const ts = document.createElement("span"); ts.style.fontFamily = "var(--fm)"; ts.style.fontSize = "0.71rem"; ts.textContent = "Ticket: " + String(it.execution_ticket || "v2").slice(0, 26) + "...";
+const bg = document.createElement("div"); bg.style.display = "flex"; bg.style.gap = "6px";
+const b1 = document.createElement("button"); b1.type = "button"; b1.className = "btn btn-ghost"; b1.textContent = "Copy URL"; b1.addEventListener("click", function(){ copyText(it.endpoint || "", "endpoint URL"); });
+const b2 = document.createElement("button"); b2.type = "button"; b2.className = "btn btn-ghost"; b2.textContent = "Verify Outcome";
+b2.addEventListener("click", function(){ document.getElementById("outcomeAgentIdInput").value = it.agent_id || ""; document.getElementById("outcomeTicketInput").value = it.execution_ticket || ""; switchWorkspaceView("viewAppeals"); });
+bg.appendChild(b1); bg.appendChild(b2); tr.appendChild(ts); tr.appendChild(bg);
+card.appendChild(top); card.appendChild(m1); card.appendChild(m2); card.appendChild(tr); grid.appendChild(card);
+});
+box.innerHTML = ""; box.appendChild(grid);
+}
+async function executeFlash() {
+const mode = document.getElementById("flashModeSelect").value;
+if (document.getElementById("localTestbenchToggle").checked) {
+const roles = ["1_COMPUTE_EXECUTION", "2_DOMAIN_KNOWLEDGE_COMPLEMENT", "3_INDEPENDENT_VERIFICATION"];
+const picks = LOCAL_VECTORS.map(function(v, i){ return Object.assign({}, v, { crew_role: mode === "crew" ? roles[i] : null, variability_role: mode === "crew" ? roles[i] : "INDEPENDENT_VENDOR_AND_SCHEMA" }); });
+renderFlashFinalists({ match_mode: mode === "crew" ? "LOCAL_TESTBENCH_CREW" : "LOCAL_TESTBENCH_VARIED", pool_scanned_unsorted: 3, single_pass_flash_ms: "0.0410", crew_manifest: mode === "crew" ? { single_agent_coverage_pct: 50, crew_combined_coverage_pct: 100, unique_vendor_domains: 3 } : null, finalists: picks });
+return;
+}
+try {
+const resp = await fetch(apiUrl("/v1/flash"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ intent:document.getElementById("flashIntentInput").value, capabilities:Array.from(state.selectedCaps), mode:mode, max_latency_grade:document.getElementById("maxLatencySelect").value, ui_observer:true }) });
+renderFlashFinalists(await resp.json());
+} catch (e) {
+document.getElementById("flashResultsContainer").innerHTML = '<div class="empty-honest-box"><strong>Offline Sandbox:</strong> Real counters remain at 0. Toggle <strong>Offline 64-Bit Math Testbench</strong> above right to test locally.</div>';
+}
+}
+function renderDirectoryTable() {
+const tb = document.getElementById("directoryTableBody"), gf = document.getElementById("dirGradeFilter").value, q = (document.getElementById("dirSearchInput").value || "").toLowerCase().trim();
+const src = state.liveDirectoryRows.length ? state.liveDirectoryRows : (document.getElementById("localTestbenchToggle").checked ? LOCAL_VECTORS.map(function(v){ return { agent_id:v.agent_id, name:v.name, guarantee_grade:"A", mgle_nnp_stamp:v.mgle_nnp_stamp, mgle_nnp_u64_hex:v.mgle_nnp_u64_hex, endpoint:v.endpoint, avg_latency_ms:v.warm_latency_ms, wired_tool_count:3, auth_mode:"none", audit_status:"LOCAL_TESTBENCH" }; }) : []);
+const rows = src.filter(function(r){
+const g = String(r.guarantee_grade || "D").toUpperCase();
+if (gf === "AB" && g !== "A" && g !== "B") return false;
+if (gf === "D" && g !== "D") return false;
+if (gf === "EF" && g !== "E" && g !== "F") return false;
+return !q || ((r.agent_id || "") + " " + (r.name || "") + " " + (r.endpoint || "")).toLowerCase().includes(q);
+});
+if (!rows.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--ts);padding:24px;">0 matching rows (zero synthetic filler agents).</td></tr>'; return; }
+tb.innerHTML = "";
+rows.slice(0, 120).forEach(function(r){
+const tr = document.createElement("tr");
+const hex = r.mgle_nnp_u64_hex || (r.mgle_nnp_64bit ? ("0x" + Number(r.mgle_nnp_64bit).toString(16).toUpperCase()) : "0x0");
+[(r.agent_id || "") + " (" + (r.name || "") + ")", r.mgle_nnp_stamp || "CDAE-ZED", hex, r.endpoint || "", r.avg_latency_ms != null ? r.avg_latency_ms + " ms" : "N/A", String(r.wired_tool_count || 0) + " / " + (r.auth_mode || "none"), r.audit_status || ""].forEach(function(c, i){
+const td = document.createElement("td"); if (i >= 1 && i <= 5) td.className = "mono"; td.textContent = c; tr.appendChild(td);
+});
+tb.appendChild(tr);
+});
+}
+function switchWorkspaceView(id) {
+document.querySelectorAll(".nav-view-btn").forEach(function(b){ b.classList.toggle("active", b.getAttribute("data-view") === id); });
+document.querySelectorAll(".view-panel").forEach(function(p){ p.classList.toggle("active", p.id === id); });
+}
+document.getElementById("copyHeaderEmailBtn").addEventListener("click", function(){ copyText(CONTACT_EMAIL, "support email"); });
+document.getElementById("copyFooterEmailBtn").addEventListener("click", function(){ copyText(CONTACT_EMAIL, "support email"); });
+document.getElementById("copyWalletBtn").addEventListener("click", function(){ copyText(TREASURY_WALLET, "Base USDC wallet"); });
+document.getElementById("copyMcpUrlBtn").addEventListener("click", function(){ copyText(PROD_ORIGIN + "/mcp", "MCP Hook URL"); });
+document.getElementById("copyCouplerBtn").addEventListener("click", function(){ copyText(document.getElementById("couplerReadout").textContent, "64-bit coupler"); });
+document.getElementById("mintStarterKeyBtn").addEventListener("click", mintStarterKey);
+document.getElementById("copyStarterKeyBtn").addEventListener("click", function(){ const v = document.getElementById("starterKeyInput").value.trim(); if (!v) mintStarterKey(); else copyText(v, "X-Radial-Pass key"); });
+document.getElementById("copyCodeSnippetBtn").addEventListener("click", function(){ copyText(document.getElementById("codeSnippetDisplay").textContent, "code snippet"); });
+document.getElementById("refreshTelemetryBtn").addEventListener("click", function(){ syncTelemetry(); showToast("Syncing US-EAST4 node..."); });
+document.querySelectorAll(".code-tab-btn").forEach(function(b){ b.addEventListener("click", function(){ document.querySelectorAll(".code-tab-btn").forEach(function(x){ x.classList.remove("active"); }); b.classList.add("active"); state.activeSnippet = b.getAttribute("data-snippet") || "mcp_json"; renderSnippet(); }); });
+document.querySelectorAll(".nav-view-btn").forEach(function(b){ b.addEventListener("click", function(){ switchWorkspaceView(b.getAttribute("data-view")); }); });
+document.getElementById("maxLatencySelect").addEventListener("change", updateCouplerPreview);
+document.getElementById("runFlashBtn").addEventListener("click", executeFlash);
+document.getElementById("radialHeroEmblemWrap").addEventListener("click", function(){ const el = document.getElementById("radialHeroEmblemWrap"); el.classList.add("radial-flash-burst"); setTimeout(function(){ el.classList.remove("radial-flash-burst"); }, 650); switchWorkspaceView("viewFlash"); executeFlash(); });
+document.getElementById("localTestbenchToggle").addEventListener("change", function(){ renderDirectoryTable(); if (document.getElementById("localTestbenchToggle").checked) executeFlash(); });
+document.getElementById("dirGradeFilter").addEventListener("change", renderDirectoryTable);
+document.getElementById("dirSearchInput").addEventListener("input", renderDirectoryTable);
+document.getElementById("triggerCrawlBtn").addEventListener("click", async function(){ try { const r = await fetch(apiUrl("/v1/directory/crawl"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({limit:30}) }); const d = await r.json(); showToast("Probed " + (d.probed_count || 0) + " endpoints"); syncTelemetry(); } catch (e) { showToast("Crawl requires live connection"); } });
+document.getElementById("x402AmountInput").addEventListener("input", function(){ const a = Math.max(0.01, parseFloat(document.getElementById("x402AmountInput").value || "0.01")); document.getElementById("taxPreviewReadout").textContent = "Split: $" + (a*0.3).toFixed(4) + " Tax (30%) \u2022 $" + (a*0.6).toFixed(4) + " Ops (60%) \u2022 $" + (a*0.1).toFixed(4) + " Treasury (10%)"; });
+document.getElementById("settleX402Btn").addEventListener("click", async function(){ try { const r = await fetch(apiUrl("/v1/x402/settle"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ tx_hash:document.getElementById("x402TxHashInput").value.trim(), payer_wallet:document.getElementById("x402PayerInput").value.trim(), amount_usdc:parseFloat(document.getElementById("x402AmountInput").value || "0.01") }) }); document.getElementById("x402OutputBox").textContent = JSON.stringify(await r.json(), null, 2); } catch (e) { document.getElementById("x402OutputBox").textContent = "Connect to radialswitchboard.com for Base Mainnet RPC check."; } });
+document.getElementById("claimWorkBtn").addEventListener("click", async function(){ try { const r = await fetch(apiUrl("/v1/work/claim"), { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" }); const d = await r.json(); state.activeWorkAssignment = d; document.getElementById("workAssignmentIdInput").value = d.assignment_id || ""; document.getElementById("workOutputBox").textContent = JSON.stringify(d, null, 2); } catch (e) { document.getElementById("workOutputBox").textContent = "Connect to live node to claim assignment."; } });
+document.getElementById("probeAndSubmitWorkBtn").addEventListener("click", async function(){ if (!state.activeWorkAssignment) return; try { const results = []; for (const t of state.activeWorkAssignment.targets) { let h16 = "0000000000000000"; if (String(t.endpoint || "").includes("/v1/canary/")) { const cr = await fetch(t.endpoint.replace(PROD_ORIGIN, API_BASE), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/list"}) }); const cj = await cr.json(); const tl = (cj.result && cj.result.tools && cj.result.tools[0]) || null; if (tl && window.crypto && window.crypto.subtle) { const canon = JSON.stringify([{ i:Object.keys(tl.inputSchema.properties).sort(), n:tl.name, r:tl.inputSchema.required.slice().sort() }]); const dig = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon)); h16 = Array.from(new Uint8Array(dig)).map(function(b){ return b.toString(16).padStart(2,"0"); }).join("").slice(0,16); } } results.push({ agent_id:t.agent_id, tool_schema_hash_16:h16 }); } const sr = await fetch(apiUrl("/v1/work/submit"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ assignment_id:state.activeWorkAssignment.assignment_id, region:"browser-scout", results:results }) }); document.getElementById("workOutputBox").textContent = JSON.stringify(await sr.json(), null, 2); } catch (e) { document.getElementById("workOutputBox").textContent = "Probe submission failed offline."; } });
+document.getElementById("submitAppealBtn").addEventListener("click", async function(){ try { const r = await fetch(apiUrl("/v1/appeals"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ agent_id:document.getElementById("appealSlugInput").value.trim(), endpoint:document.getElementById("appealEndpointInput").value.trim(), reason:document.getElementById("appealReasonInput").value.trim() }) }); document.getElementById("appealOutputBox").textContent = JSON.stringify(await r.json(), null, 2); syncTelemetry(); } catch (e) { document.getElementById("appealOutputBox").textContent = "Live interrogation requires radialswitchboard.com connection."; } });
+async function postOutcome(aid, tkt, ok, ms) { try { const r = await fetch(apiUrl("/v1/outcome"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ agent_id:aid, execution_ticket:tkt, outcome_success:ok, observed_latency_ms:ms }) }); document.getElementById("outcomeOutputBox").textContent = JSON.stringify(Object.assign({ http_status:r.status }, await r.json()), null, 2); syncTelemetry(); } catch (e) { document.getElementById("outcomeOutputBox").textContent = JSON.stringify({ preview:true, sabotage_blocked:String(tkt).includes("forged") }, null, 2); } }
+document.getElementById("submitOutcomeBtn").addEventListener("click", function(){ postOutcome(document.getElementById("outcomeAgentIdInput").value.trim(), document.getElementById("outcomeTicketInput").value.trim(), document.getElementById("outcomeStatusSelect").value === "true", parseFloat(document.getElementById("outcomeLatencyInput").value || "68")); });
+document.getElementById("testForgedTicketBtn").addEventListener("click", function(){ const f = "v2.1700000000.deadbeef1234.0000.forged_sig"; document.getElementById("outcomeTicketInput").value = f; postOutcome(document.getElementById("outcomeAgentIdInput").value.trim() || "mcp://target", f, false, 999); });
+renderCapabilityChips(); updateCouplerPreview(); renderSnippet(); syncTelemetry();
+})();
+</script>
 </body>
 </html>
