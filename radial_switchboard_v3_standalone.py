@@ -7,7 +7,7 @@ import io, ipaddress, json, os, random, re, secrets, socketserver, ssl, threadin
 import urllib.error, urllib.parse, urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-SPEC_VERSION = "3.5.2"
+SPEC_VERSION = "3.5.3"
 SCHEMA_NIBBLE = 0x3
 CONTACT_EMAIL = "support@radialswitchboard.com"
 PUBLIC_GITHUB_REPO = "https://github.com/MglennP2/mglennp-radial-switchboard"
@@ -605,6 +605,8 @@ class StandaloneSwitchboardRuntime:
             "total_external_uses": 0, "external_agent_calls": 0, "mcp_jsonrpc_calls": 0, "rest_matchmake_calls": 0,
             "ai_beacon_discovery_pulls": 0, "room_handshakes_completed": 0, "starter_keys_minted": 0,
             "outcome_reports_verified": 0, "scout_sweeps_completed": 0, "apprentices_enrolled": 0,
+            "mcp_initialize_handshakes": 0, "mcp_tools_list_probes": 0, "bridge_script_downloads": 0,
+            "recent_activity": [],
             "last_scout_sweep_utc": None, "scout_currently_running": False,
         }
         if hydrate_external:
@@ -623,10 +625,32 @@ class StandaloneSwitchboardRuntime:
         self.telemetry["total_external_uses"] = int(self.telemetry.get("external_agent_calls") or 0) + int(self.telemetry.get("ai_beacon_discovery_pulls") or 0) + int(self.telemetry.get("room_handshakes_completed") or 0)
         return self.telemetry["total_external_uses"]
 
-    def record_event(self, field: str, ext_call: bool = False) -> None:
+    @staticmethod
+    def _mask_ip(ip: str) -> str:
+        s = (ip or "anon").strip()
+        if "." in s:
+            pts = s.split(".")
+            if len(pts) == 4: return f"{pts[0]}.{pts[1]}.x.x"
+        if ":" in s:
+            pts = s.split(":")
+            return ":".join(pts[:2]) + "::x"
+        return s[:12]
+
+    def record_event(self, field: str, ext_call: bool = False, route: str = "", ua: str = "", ip: str = "", status: int = 200) -> None:
         with self._lock:
             self.telemetry[field] = int(self.telemetry.get(field) or 0) + 1
             if ext_call: self.telemetry["external_agent_calls"] = int(self.telemetry.get("external_agent_calls") or 0) + 1
+            if route:
+                act = list(self.telemetry.get("recent_activity") or [])
+                act.insert(0, {
+                    "utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
+                    "event": field,
+                    "route": route[:64],
+                    "status": int(status),
+                    "ua": (ua or "unknown").strip()[:96],
+                    "ip_masked": self._mask_ip(ip),
+                })
+                self.telemetry["recent_activity"] = act[:25]
             self._recompute()
         if self.hydrate_external: threading.Thread(target=self._save_telemetry, daemon=True).start()
 
@@ -658,21 +682,27 @@ class StandaloneSwitchboardRuntime:
         return None
 
     def _load_telemetry(self) -> None:
-        ks = ("external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled")
+        ks = ("external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled", "mcp_initialize_handshakes", "mcp_tools_list_probes", "bridge_script_downloads")
         if os.path.isfile(TELEMETRY_LOCAL_PATH):
             try:
                 loc = json.loads(open(TELEMETRY_LOCAL_PATH).read())
                 for kx in ks:
                     if isinstance(loc.get(kx), int) and loc[kx] > self.telemetry.get(kx, 0): self.telemetry[kx] = loc[kx]
+                if isinstance(loc.get("recent_activity"), list) and loc["recent_activity"]:
+                    self.telemetry["recent_activity"] = loc["recent_activity"][:25]
             except Exception: pass
         rem = self._get_sys_state("sys://telemetry_v3")
         if isinstance(rem, dict):
             for kx in ks:
                 if isinstance(rem.get(kx), int) and rem[kx] > self.telemetry.get(kx, 0): self.telemetry[kx] = rem[kx]
+            if isinstance(rem.get("recent_activity"), list) and rem["recent_activity"]:
+                self.telemetry["recent_activity"] = rem["recent_activity"][:25]
         self._recompute()
 
     def _save_telemetry(self) -> None:
-        snap = {kx: self.telemetry.get(kx) for kx in ("total_external_uses", "external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled")}
+        ks = ("total_external_uses", "external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled", "mcp_initialize_handshakes", "mcp_tools_list_probes", "bridge_script_downloads")
+        snap: Dict[str, Any] = {kx: self.telemetry.get(kx, 0) for kx in ks}
+        snap["recent_activity"] = list(self.telemetry.get("recent_activity") or [])[:25]
         try: open(TELEMETRY_LOCAL_PATH, "w").write(json.dumps(snap))
         except Exception: pass
         self._put_sys_state("sys://telemetry_v3", snap, int(snap.get("total_external_uses") or 0))
@@ -885,10 +915,93 @@ class StandaloneSwitchboardRuntime:
             except Exception: pass
             time.sleep(600.0)
 
+MCP_READONLY_ANNOTATIONS = {
+    "title": "Read-Only Agent Discovery & Audit Query",
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
 MCP_SERVER_TOOLS = [
-    {"name": "flash_matchmake_agents", "description": "Sub-ms 64-bit MGLE-NNP peer-to-peer AI agent & MCP matchmaker (Top-10 anti-monoculture varied or mode='crew' 3-agent complementary triad, geo-zone aware).", "inputSchema": {"type": "object", "properties": {"intent": {"type": "string"}, "capabilities": {"type": "array", "items": {"type": "string"}}, "mode": {"type": "string", "enum": ["top10_varied", "crew"]}, "caller_region": {"type": "string", "description": "Optional geo-zone: E (US-East), W (US-West), U (Europe), P (APAC), or GLOBAL"}, "require_instant_zero_auth": {"type": "boolean"}, "max_latency_grade": {"type": "string"}, "top_k": {"type": "integer"}}}},
-    {"name": "get_agent_dossier", "description": "Fetch live 4-point runtime audit & schema hash dossier for an agent_id.", "inputSchema": {"type": "object", "properties": {"agent_id": {"type": "string"}}, "required": ["agent_id"]}},
-    {"name": "get_switchboard_telemetry", "description": "Return real audited pool counts, crawl progress, and usage counters.", "inputSchema": {"type": "object", "properties": {}}},
+    {
+        "name": "flash_matchmake_agents",
+        "title": "64-Bit Agent & MCP Crew Matchmaker",
+        "description": "Read-only sub-millisecond 64-bit MGLE-NNP peer-to-peer AI agent and MCP server matchmaker. Filters live heartbeat-verified endpoints and returns either a Top-10 anti-monoculture shortlist or a 3-agent complementary crew (Compute + Domain + Verifier).",
+        "annotations": MCP_READONLY_ANNOTATIONS,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "intent": {
+                    "type": "string",
+                    "description": "Natural-language task description or capability query used to infer required 64-bit capability switches (for example: 'analyze spreadsheet anomalies and summarize financials')."
+                },
+                "capabilities": {
+                    "type": "array",
+                    "description": "Optional explicit list of MGLE-NNP capability switch names (such as 'sql', 'database', 'finance_data', 'file_parse', 'math_verify', 'code_exec', 'web_fetch', 'search_rag').",
+                    "items": {
+                        "type": "string",
+                        "description": "Canonical capability switch identifier from Bits 0..23."
+                    }
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["top10_varied", "crew"],
+                    "description": "Matchmaking output policy: 'top10_varied' returns a ranked provider-diverse shortlist; 'crew' assembles a 3-agent complementary triad across independent vendors."
+                },
+                "caller_region": {
+                    "type": "string",
+                    "description": "Optional caller geographic zone for RTT affinity scoring: 'E' (US-East), 'W' (US-West), 'U' (Europe), 'P' (APAC), or 'GLOBAL'."
+                },
+                "require_instant_zero_auth": {
+                    "type": "boolean",
+                    "description": "When true, restricts candidates strictly to open zero-credential endpoints that can be invoked immediately without OAuth or API keys."
+                },
+                "max_latency_grade": {
+                    "type": "string",
+                    "enum": ["A", "B", "C", "D", "E"],
+                    "description": "Maximum acceptable Virginia Scout round-trip latency grade ('A' <=150ms, 'B' <=350ms, 'C' <=700ms, 'D' offline repo, 'E' include ungraded)."
+                },
+                "top_k": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "description": "Maximum number of ranked candidate endpoints to return in the shortlist (1 to 25, default 10)."
+                }
+            }
+        }
+    },
+    {
+        "name": "get_agent_dossier",
+        "title": "Get Live Agent Security & Runtime Dossier",
+        "description": "Read-only lookup returning the 4-point Virginia Scout runtime heartbeat audit, latency metrics, 64-bit MGLE-NNP coupler code, and SHA-256 tool-schema hash dossier for a specific agent_id.",
+        "annotations": MCP_READONLY_ANNOTATIONS,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "Unique agent or MCP server identifier from the Radial Switchboard phonebook (for example 'mcp://...' or registry slug)."
+                }
+            },
+            "required": ["agent_id"]
+        }
+    },
+    {
+        "name": "get_switchboard_telemetry",
+        "title": "Get Live Switchboard Pool & Usage Telemetry",
+        "description": "Read-only health and telemetry snapshot returning real audited Grade A/B pool counts, autonomous crawl progress, MCP/REST hook counters, and recent external bot/agent activity.",
+        "annotations": MCP_READONLY_ANNOTATIONS,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_recent_activity": {
+                    "type": "boolean",
+                    "description": "Optional flag (default true) indicating whether to include the rolling 25-event external hook and crawler activity feed in the response."
+                }
+            }
+        }
+    },
 ]
 
 def build_llms_txt(treasury_address: str) -> str:
@@ -1136,30 +1249,46 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             pr = urllib.parse.urlparse(self.path); p = pr.path.rstrip("/") or "/"; qs = urllib.parse.parse_qs(pr.query)
             ui = (qs.get("ui_observer") or [""])[0].lower() in ("1", "true")
             ip = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (self.client_address[0] if self.client_address else "anon")
+            ua = str(self.headers.get("User-Agent") or "unknown")
             if p in ("/", "/directory"):
                 f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "radial_agent_directory_explorer.html")
-                self._bytes(200, "text/html; charset=utf-8", open(f, "rb").read() if os.path.isfile(f) else f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
+                if os.path.isfile(f):
+                    html = open(f, "r", encoding="utf-8").read()
+                    hl = self._health()
+                    tel = hl.get("telemetry") or {}
+                    html = html.replace('<div class="score-value emerald" id="statTotalUses">0</div>', f'<div class="score-value emerald" id="statTotalUses">{int(hl.get("total_external_uses") or 0):,}</div>', 1)
+                    html = html.replace('<div class="score-value" id="statLiveCallable">0</div>', f'<div class="score-value" id="statLiveCallable">{int(hl.get("live_callable_ab") or 0):,}</div>', 1)
+                    html = html.replace('0 Indexed &bull; 0 Sweeps &bull; 0 Fake Seeds', f'{int(hl.get("total_unsorted_pool") or 0):,} Indexed &bull; {int(tel.get("scout_sweeps_completed") or 0):,} Sweeps &bull; 0 Fake Seeds', 1)
+                    html = html.replace("SPEC REV 3.5.2", f"SPEC REV {SPEC_VERSION}").replace("SPEC 3.5.2", f"SPEC {SPEC_VERSION}")
+                    self._bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
+                else:
+                    self._bytes(200, "text/html; charset=utf-8", f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
+            elif p in ("/icon.svg", "/favicon.svg"):
+                ic = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icon.svg")
+                self._bytes(200, "image/svg+xml", open(ic, "rb").read() if os.path.isfile(ic) else b"<svg xmlns='http://www.w3.org/2000/svg'/>")
             elif p == "/mcp_stdio_bridge.py":
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui:
+                    runtime.record_event("bridge_script_downloads")
+                    runtime.record_event("ai_beacon_discovery_pulls", route="GET /mcp_stdio_bridge.py", ua=ua, ip=ip)
                 self._bytes(200, "text/x-python; charset=utf-8", MCP_STDIO_BRIDGE_SOURCE.encode())
             elif p == "/radial_apprentice_worker.py":
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._bytes(200, "text/x-python; charset=utf-8", APPRENTICE_STARTER_SOURCE.encode())
             elif p == "/llms.txt":
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._bytes(200, "text/plain; charset=utf-8", build_llms_txt(runtime.gate.treasury_address).encode("utf-8"))
             elif p in ("/.well-known/agent-card.json", "/.well-known/agent.json"):
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._json(200, build_a2a_agent_card())
             elif p == "/.well-known/agents.json":
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._json(200, [build_a2a_agent_card()])
             elif p in ("/mcp/server-card", "/.well-known/ai-catalog.json"):
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 c = {"$schema": "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json", "name": "com.radialswitchboard/matchmaker", "title": "MglennP Radial Switchboard", "version": SPEC_VERSION, "description": "64-bit MGLE-NNP MCP & A2A agent matchmaker and runtime auditor.", "contact": {"name": "MglennP", "email": CONTACT_EMAIL}, "supportedProtocolVersions": ["2026-07-28", "2025-06-18"], "remotes": [{"type": "streamable-http", "url": "https://radialswitchboard.com/mcp"}]}
                 self._json(200, {"servers": [c]} if p == "/.well-known/ai-catalog.json" else c)
             elif p in ("/openapi.json", "/.well-known/mcp.json"):
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._json(200, build_openapi_spec(runtime.gate.treasury_address))
             elif p == "/v1/health":
                 self._json(200, self._health())
@@ -1171,7 +1300,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 recs = sorted(runtime.pool_by_id.values(), key=lambda x: (0 if x.get("guarantee_grade") == "A" else 1, float(x.get("avg_latency_ms") or 99999.0)))
                 self._json(200, {"spec_version": SPEC_VERSION, "contact_email": CONTACT_EMAIL, "synthetic_seed_rows": 0, "total_agents": len(recs), "appeals": runtime.appeals_log, "tax_ledger": runtime.gate.tax_revenue_ledger, "agents": recs[:250]})
             elif p == "/v1/phonebook/export":
-                if not ui: runtime.record_event("ai_beacon_discovery_pulls")
+                if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 fmt = (qs.get("format") or ["jsonl"])[0].lower()
                 grd = (qs.get("grades") or ["AB"])[0].upper()
                 reg = (qs.get("region") or ["ALL"])[0].upper()
@@ -1197,7 +1326,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 if not ui:
                     ok_g, _, ex_h = self._enforce_gate(ip)
                     if not ok_g: return
-                    runtime.record_event("rest_matchmake_calls", ext_call=True)
+                    runtime.record_event("rest_matchmake_calls", ext_call=True, route=f"POST {p}", ua=ua, ip=ip)
                 else:
                     ex_h = {}
                 self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), infer_capabilities_from_intent((qs.get("intent") or ["mcp"])[0]), mode=(qs.get("mode") or ["top10_varied"])[0], caller_region=self._caller_region(qs, None)), ex_h)
@@ -1217,22 +1346,34 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             try: body = json.loads(self.rfile.read(min(ln, 524288)).decode("utf-8", errors="replace")) if ln > 0 else {}
             except Exception: body = {}
             ip = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (self.client_address[0] if self.client_address else "anon")
+            ua = str(self.headers.get("User-Agent") or "unknown")
             if p == "/mcp":
                 rid, m, prm = body.get("id", 1), str(body.get("method") or ""), (body.get("params") if isinstance(body.get("params"), dict) else {})
+                cinfo = (prm.get("clientInfo") or {}) if isinstance(prm.get("clientInfo"), dict) else {}
+                c_ua = f"{cinfo.get('name')}/{cinfo.get('version')} ({ua})" if cinfo.get("name") else ua
                 if m == "notifications/initialized": self._bytes(202, "application/json", b"")
-                elif m == "initialize": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": str(prm.get("protocolVersion") or "2026-07-28"), "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "MglennP Radial Switchboard", "version": SPEC_VERSION}}})
+                elif m == "initialize":
+                    runtime.record_event("mcp_initialize_handshakes", route="POST /mcp [initialize]", ua=c_ua, ip=ip)
+                    self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": str(prm.get("protocolVersion") or "2026-07-28"), "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "MglennP Radial Switchboard", "version": SPEC_VERSION}}})
                 elif m == "ping": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {}})
-                elif m == "tools/list": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"tools": MCP_SERVER_TOOLS}})
+                elif m == "tools/list":
+                    if "RadialScout" not in ua:
+                        runtime.record_event("mcp_tools_list_probes", route="POST /mcp [tools/list]", ua=ua, ip=ip)
+                    self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"tools": MCP_SERVER_TOOLS}})
                 elif m == "tools/call":
                     tn, ag = str(prm.get("name") or ""), (prm.get("arguments") if isinstance(prm.get("arguments"), dict) else {})
                     ex_h: Dict[str, str] = {}
                     if tn == "flash_matchmake_agents":
                         ok_g, _, ex_h = self._enforce_gate(ip, ag)
                         if not ok_g: return
-                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True)
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [flash_matchmake_agents]", ua=ua, ip=ip)
                         out = flash_unsorted_pool(list(runtime.pool_by_id.values()), ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), bool(ag.get("require_instant_zero_auth", False)), str(ag.get("max_latency_grade", "E")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"), caller_region=self._caller_region(None, ag))
-                    elif tn == "get_agent_dossier": out = runtime.pool_by_id.get(str(ag.get("agent_id") or "")) or {"error": "Not found"}
-                    elif tn == "get_switchboard_telemetry": out = self._health()
+                    elif tn == "get_agent_dossier":
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [get_agent_dossier]", ua=ua, ip=ip)
+                        out = runtime.pool_by_id.get(str(ag.get("agent_id") or "")) or {"error": "Not found"}
+                    elif tn == "get_switchboard_telemetry":
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [get_switchboard_telemetry]", ua=ua, ip=ip)
+                        out = self._health()
                     else: self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unknown tool"}}); return
                     self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": json.dumps(out)}], "structuredContent": out, "isError": False}}, ex_h or None)
                 else:

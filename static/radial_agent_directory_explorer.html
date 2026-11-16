@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MglennP Radial Switchboard &mdash; Spec Rev 3.5.2 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
-<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.5.2): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
+<title>MglennP Radial Switchboard &mdash; Spec Rev 3.5.3 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
+<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.5.3): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -130,7 +130,7 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 <div class="brand-cluster">
 <span class="brand-dot" aria-hidden="true"></span>
 <span class="brand-title">MGLENNP RADIAL SWITCHBOARD</span>
-<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.2</span>
+<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.3</span>
 </div>
 <div class="topbar-right">
 <div class="contact-chip">
@@ -255,6 +255,7 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 <button type="button" class="nav-view-btn" data-view="viewDirectory">Live Audited Directory</button>
 <button type="button" class="nav-view-btn" data-view="viewGate">x402 USDC &amp; Canary Scout Gate</button>
 <button type="button" class="nav-view-btn" data-view="viewAppeals">Appeals &amp; Stage-2 Outcome</button>
+<button type="button" class="nav-view-btn" data-view="viewPulse">Hook &amp; Bot Pulse</button>
 </div>
 <label class="testbench-toggle-wrap"><input type="checkbox" id="localTestbenchToggle" /><span>Offline 64-Bit Math Testbench (Keeps Real Counters = 0)</span></label>
 </div>
@@ -323,6 +324,25 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 </div>
 <div class="field-group" style="margin-bottom:8px;"><label class="field-label" for="workAssignmentIdInput">Active Assignment ID</label><input type="text" id="workAssignmentIdInput" readonly placeholder="Click Claim Assignment" style="font-family:var(--fm);" /></div>
 <div class="json-output-box" id="workOutputBox">No active Scout Duty assignment claimed yet.</div>
+</div>
+</div>
+</section>
+<section class="view-panel" id="viewPulse">
+<div class="panel-card">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+<h3 class="panel-title" style="margin:0;">Mobile Hook &amp; Bot Pulse (Live US-EAST4 Telemetry)</h3>
+<button type="button" class="btn btn-primary" id="refreshPulseBtn">Refresh Pulse</button>
+</div>
+<p style="color:#94a3b8;font-size:0.9rem;margin-top:0;">Separates schema/indexer probes (Glama, mcptry, registries) from active MCP <code>tools/call</code> &amp; REST matchmaking invocations. Caller IPs are automatically privacy-masked.</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:14px 0;">
+<div style="background:#0b1622;border:1px solid #1e293b;border-radius:10px;padding:12px;"><div style="font-size:0.72rem;color:#94a3b8;text-transform:uppercase;">MCP Handshakes</div><div id="pulseMcpInit" style="font-size:1.45rem;font-weight:700;color:#38bdf8;margin-top:4px;">0</div><div style="font-size:0.72rem;color:#64748b;">initialize</div></div>
+<div style="background:#0b1622;border:1px solid #1e293b;border-radius:10px;padding:12px;"><div style="font-size:0.72rem;color:#94a3b8;text-transform:uppercase;">Schema Probes</div><div id="pulseToolsList" style="font-size:1.45rem;font-weight:700;color:#fbbf24;margin-top:4px;">0</div><div style="font-size:0.72rem;color:#64748b;">tools/list</div></div>
+<div style="background:#0b1622;border:1px solid #1e293b;border-radius:10px;padding:12px;"><div style="font-size:0.72rem;color:#94a3b8;text-transform:uppercase;">Hook Calls</div><div id="pulseActiveCalls" style="font-size:1.45rem;font-weight:700;color:#10b981;margin-top:4px;">0</div><div style="font-size:0.72rem;color:#64748b;">MCP + REST</div></div>
+<div style="background:#0b1622;border:1px solid #1e293b;border-radius:10px;padding:12px;"><div style="font-size:0.72rem;color:#94a3b8;text-transform:uppercase;">Beacon &amp; Bridge</div><div id="pulseBeacons" style="font-size:1.45rem;font-weight:700;color:#c084fc;margin-top:4px;">0</div><div id="pulseBridgeSub" style="font-size:0.72rem;color:#64748b;">0 bridge pulls</div></div>
+</div>
+<h4 style="margin:16px 0 8px;font-size:0.95rem;color:#e2e8f0;">Rolling 25 External Hook &amp; Beacon Callers</h4>
+<div id="pulseActivityFeed" style="display:flex;flex-direction:column;gap:8px;max-height:460px;overflow-y:auto;">
+<div style="color:#64748b;font-size:0.85rem;padding:10px;background:#0b1622;border-radius:8px;">Waiting for next external bot or agent request...</div>
 </div>
 </div>
 </section>
@@ -463,8 +483,8 @@ try {
 const resp = await fetch(apiUrl("/v1/health"));
 if (!resp.ok) throw new Error("HTTP " + resp.status);
 const data = await resp.json();
-badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.2");
-document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.2");
+badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.3");
+document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.3");
 const tel = data.telemetry || {};
 const mcp = Number(tel.mcp_jsonrpc_calls || 0), rest = Number(tel.rest_matchmake_calls || 0), bc = Number(tel.ai_beacon_discovery_pulls || 0), rm = Number(tel.room_handshakes_completed || 0);
 const tot = (typeof data.total_external_uses === "number") ? data.total_external_uses : (Number(tel.external_agent_calls || 0) + bc + rm);
@@ -474,6 +494,36 @@ document.getElementById("statLiveCallable").textContent = Number(data.live_calla
 document.getElementById("statPoolSub").textContent = Number(data.total_unsorted_pool || 0) + " Indexed \u2022 " + Number(tel.scout_sweeps_completed || 0) + " Sweeps \u2022 " + Number(data.synthetic_seed_rows || 0) + " Fake Seeds";
 document.getElementById("statKeySub").textContent = Number(tel.starter_keys_minted || 0) + " Starter Keys Minted \u2022 Zero Signup";
 document.getElementById("statTaxSub").textContent = "$" + Number(data.usdc_settled_usd || 0).toFixed(4) + " Settled \u2022 $" + Number(data.tax_reserved_usd || 0).toFixed(4) + " Tax";
+const pInit = document.getElementById("pulseMcpInit");
+if (pInit) {
+  pInit.textContent = Number(tel.mcp_initialize_handshakes || 0).toLocaleString();
+  document.getElementById("pulseToolsList").textContent = Number(tel.mcp_tools_list_probes || 0).toLocaleString();
+  document.getElementById("pulseActiveCalls").textContent = (mcp + rest).toLocaleString();
+  document.getElementById("pulseBeacons").textContent = bc.toLocaleString();
+  document.getElementById("pulseBridgeSub").textContent = Number(tel.bridge_script_downloads || 0) + " bridge pulls";
+  const feedEl = document.getElementById("pulseActivityFeed");
+  const acts = Array.isArray(tel.recent_activity) ? tel.recent_activity : [];
+  if (acts.length === 0) {
+    feedEl.innerHTML = '<div style="color:#64748b;font-size:0.85rem;padding:10px;background:#0b1622;border-radius:8px;">Connected to US-EAST4. Next external probe, beacon fetch, or MCP call will appear here automatically.</div>';
+  } else {
+    feedEl.innerHTML = "";
+    acts.forEach(function(ev) {
+      const row = document.createElement("div");
+      row.style.cssText = "background:#0b1622;border:1px solid #1e293b;border-radius:8px;padding:10px;font-size:0.82rem;line-height:1.45;word-break:break-word;";
+      const top = document.createElement("div");
+      top.style.cssText = "display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-weight:600;color:#10b981;";
+      top.textContent = (ev.route || ev.event || "request") + " (" + (ev.status || 200) + ")";
+      const ts = document.createElement("span");
+      ts.style.cssText = "color:#94a3b8;font-weight:400;font-size:0.76rem;";
+      ts.textContent = (ev.utc || "") + " • " + (ev.ip_masked || "");
+      top.appendChild(ts);
+      const sub = document.createElement("div");
+      sub.style.cssText = "color:#cbd5e1;margin-top:3px;font-family:monospace;font-size:0.76rem;";
+      sub.textContent = "UA: " + (ev.ua || "unknown");
+      row.appendChild(top); row.appendChild(sub); feedEl.appendChild(row);
+    });
+  }
+}
 } catch (e) {
 badge.className = "conn-pill offline"; badge.textContent = "OFFLINE PREVIEW (COUNTERS = 0)";
 }
@@ -581,6 +631,7 @@ document.getElementById("mintStarterKeyBtn").addEventListener("click", mintStart
 document.getElementById("copyStarterKeyBtn").addEventListener("click", function(){ const v = document.getElementById("starterKeyInput").value.trim(); if (!v) mintStarterKey(); else copyText(v, "X-Radial-Pass key"); });
 document.getElementById("copyCodeSnippetBtn").addEventListener("click", function(){ copyText(document.getElementById("codeSnippetDisplay").textContent, "code snippet"); });
 document.getElementById("refreshTelemetryBtn").addEventListener("click", function(){ syncTelemetry(); showToast("Syncing US-EAST4 node..."); });
+const rpb = document.getElementById("refreshPulseBtn"); if (rpb) rpb.addEventListener("click", function(){ syncTelemetry(); showToast("Refreshed Hook & Bot Pulse"); });
 document.querySelectorAll(".code-tab-btn").forEach(function(b){ b.addEventListener("click", function(){ document.querySelectorAll(".code-tab-btn").forEach(function(x){ x.classList.remove("active"); }); b.classList.add("active"); state.activeSnippet = b.getAttribute("data-snippet") || "mcp_json"; renderSnippet(); }); });
 document.querySelectorAll(".nav-view-btn").forEach(function(b){ b.addEventListener("click", function(){ switchWorkspaceView(b.getAttribute("data-view")); }); });
 document.getElementById("maxLatencySelect").addEventListener("change", updateCouplerPreview);
