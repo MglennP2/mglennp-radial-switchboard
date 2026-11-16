@@ -1,4 +1,4 @@
-﻿.env
 __pycache__/
 *.pyc
-radial_synapse_directory/
+*.bak*
+.env

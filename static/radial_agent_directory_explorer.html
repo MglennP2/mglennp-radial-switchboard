@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MglennP Radial Switchboard &mdash; Spec Rev 3.2.0 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
-<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.2.0): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
+<title>MglennP Radial Switchboard &mdash; Spec Rev 3.5.2 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
+<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.5.2): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -130,7 +130,7 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 <div class="brand-cluster">
 <span class="brand-dot" aria-hidden="true"></span>
 <span class="brand-title">MGLENNP RADIAL SWITCHBOARD</span>
-<span class="spec-pill" id="specVersionBadge">SPEC REV 3.2.0</span>
+<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.2</span>
 </div>
 <div class="topbar-right">
 <div class="contact-chip">
@@ -379,6 +379,10 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 <a class="beacon-pill" href="https://radialswitchboard.com/.well-known/mcp.json" target="_blank" rel="noopener noreferrer">/.well-known/mcp.json</a>
 <a class="beacon-pill" href="https://radialswitchboard.com/v1/health" target="_blank" rel="noopener noreferrer">/v1/health</a>
 <a class="beacon-pill" href="https://radialswitchboard.com/v1/benchmark" target="_blank" rel="noopener noreferrer">/v1/benchmark</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/.well-known/agent-card.json" target="_blank" rel="noopener noreferrer">/.well-known/agent-card.json</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/v1/phonebook/export?format=jsonl" target="_blank" rel="noopener noreferrer">/v1/phonebook/export</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/.well-known/agents.json" target="_blank" rel="noopener noreferrer">/.well-known/agents.json</a>
+<a class="beacon-pill" href="https://radialswitchboard.com/radial_apprentice_worker.py" target="_blank" rel="noopener noreferrer">/radial_apprentice_worker.py</a>
 </div>
 </div>
 </footer>
@@ -459,8 +463,8 @@ try {
 const resp = await fetch(apiUrl("/v1/health"));
 if (!resp.ok) throw new Error("HTTP " + resp.status);
 const data = await resp.json();
-badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.2.0");
-document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.2.0");
+badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.2");
+document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.2");
 const tel = data.telemetry || {};
 const mcp = Number(tel.mcp_jsonrpc_calls || 0), rest = Number(tel.rest_matchmake_calls || 0), bc = Number(tel.ai_beacon_discovery_pulls || 0), rm = Number(tel.room_handshakes_completed || 0);
 const tot = (typeof data.total_external_uses === "number") ? data.total_external_uses : (Number(tel.external_agent_calls || 0) + bc + rm);

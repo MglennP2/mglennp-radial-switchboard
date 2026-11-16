@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.radialswitchboard/matchmaker",
+  "title": "MglennP Radial Switchboard",
+  "description": "64-bit MGLE-NNP AI-to-AI MCP & A2A agent matchmaker, poison auditor, and 3-agent crew router.",
+  "version": "3.5.2",
+  "websiteUrl": "https://radialswitchboard.com",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://radialswitchboard.com/mcp"
+    }
+  ]
+}
