@@ -3,7 +3,7 @@
   "name": "com.radialswitchboard/matchmaker",
   "title": "MglennP Radial Switchboard",
   "description": "64-bit MGLE-NNP AI-to-AI MCP & A2A agent matchmaker, poison auditor, and 3-agent crew router.",
-  "version": "3.5.3",
+  "version": "3.5.4",
   "websiteUrl": "https://radialswitchboard.com",
   "repository": {
     "url": "https://github.com/MglennP2/mglennp-radial-switchboard",

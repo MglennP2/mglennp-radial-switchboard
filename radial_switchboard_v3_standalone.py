@@ -7,7 +7,7 @@ import io, ipaddress, json, os, random, re, secrets, socketserver, ssl, threadin
 import urllib.error, urllib.parse, urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-SPEC_VERSION = "3.5.3"
+SPEC_VERSION = "3.5.4"
 SCHEMA_NIBBLE = 0x3
 CONTACT_EMAIL = "support@radialswitchboard.com"
 PUBLIC_GITHUB_REPO = "https://github.com/MglennP2/mglennp-radial-switchboard"
@@ -916,29 +916,37 @@ class StandaloneSwitchboardRuntime:
             time.sleep(600.0)
 
 MCP_READONLY_ANNOTATIONS = {
-    "title": "Read-Only Agent Discovery & Audit Query",
+    "title": "Read-Only Switchboard Query",
     "readOnlyHint": True,
     "destructiveHint": False,
     "idempotentHint": True,
     "openWorldHint": False,
 }
 
+MCP_WRITE_ANNOTATIONS = {
+    "title": "Validated Switchboard State Update",
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+
 MCP_SERVER_TOOLS = [
     {
-        "name": "flash_matchmake_agents",
-        "title": "64-Bit Agent & MCP Crew Matchmaker",
-        "description": "Read-only sub-millisecond 64-bit MGLE-NNP peer-to-peer AI agent and MCP server matchmaker. Filters live heartbeat-verified endpoints and returns either a Top-10 anti-monoculture shortlist or a 3-agent complementary crew (Compute + Domain + Verifier).",
+        "name": "matchmake_agent_crew",
+        "title": "Matchmake 64-Bit Agent Shortlist or 3-Agent Crew",
+        "description": "Rank live heartbeat-verified MCP and A2A endpoints using 64-bit MGLE-NNP bitwise capability masks and return either a provider-diverse shortlist or a 3-agent complementary crew (Compute + Domain + Verifier) with single-use execution tickets. Use when selecting callable agents for a task; use search_agent_directory for raw keyword browsing or get_agent_dossier when you already have an agent_id.",
         "annotations": MCP_READONLY_ANNOTATIONS,
         "inputSchema": {
             "type": "object",
             "properties": {
                 "intent": {
                     "type": "string",
-                    "description": "Natural-language task description or capability query used to infer required 64-bit capability switches (for example: 'analyze spreadsheet anomalies and summarize financials')."
+                    "description": "Natural-language task intent used to infer required 64-bit capability switches when capabilities is omitted."
                 },
                 "capabilities": {
                     "type": "array",
-                    "description": "Optional explicit list of MGLE-NNP capability switch names (such as 'sql', 'database', 'finance_data', 'file_parse', 'math_verify', 'code_exec', 'web_fetch', 'search_rag').",
+                    "description": "Optional explicit MGLE-NNP capability switch names (e.g. sql, database, finance_data, file_parse, math_verify, code_exec, web_fetch, search_rag).",
                     "items": {
                         "type": "string",
                         "description": "Canonical capability switch identifier from Bits 0..23."
@@ -947,59 +955,195 @@ MCP_SERVER_TOOLS = [
                 "mode": {
                     "type": "string",
                     "enum": ["top10_varied", "crew"],
-                    "description": "Matchmaking output policy: 'top10_varied' returns a ranked provider-diverse shortlist; 'crew' assembles a 3-agent complementary triad across independent vendors."
+                    "description": "Routing policy: 'top10_varied' for ranked shortlist across distinct vendors, or 'crew' for a 3-role complementary triad."
                 },
                 "caller_region": {
                     "type": "string",
-                    "description": "Optional caller geographic zone for RTT affinity scoring: 'E' (US-East), 'W' (US-West), 'U' (Europe), 'P' (APAC), or 'GLOBAL'."
+                    "enum": ["E", "W", "U", "P", "GLOBAL"],
+                    "description": "Caller geographic zone for round-trip latency affinity ('E' US-East, 'W' US-West, 'U' Europe, 'P' APAC, 'GLOBAL' any)."
                 },
                 "require_instant_zero_auth": {
                     "type": "boolean",
-                    "description": "When true, restricts candidates strictly to open zero-credential endpoints that can be invoked immediately without OAuth or API keys."
+                    "description": "True restricts results strictly to open zero-credential endpoints callable immediately without API keys or OAuth."
                 },
                 "max_latency_grade": {
                     "type": "string",
                     "enum": ["A", "B", "C", "D", "E"],
-                    "description": "Maximum acceptable Virginia Scout round-trip latency grade ('A' <=150ms, 'B' <=350ms, 'C' <=700ms, 'D' offline repo, 'E' include ungraded)."
+                    "description": "Worst acceptable Virginia Scout RTT grade ('A' <=150ms, 'B' <=350ms, 'C' <=700ms, 'D' offline repo, 'E' any)."
                 },
                 "top_k": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 25,
-                    "description": "Maximum number of ranked candidate endpoints to return in the shortlist (1 to 25, default 10)."
+                    "description": "Maximum number of ranked candidates to return (1..25, default 10)."
                 }
             }
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "description": "Applied routing policy identifier."},
+                "finalist_count": {"type": "integer", "description": "Number of matched endpoints returned."},
+                "scanned_pool_count": {"type": "integer", "description": "Total audited phonebook records scanned."},
+                "finalists": {"type": "array", "description": "Ranked candidate agent records including endpoint URL, 64-bit hex ID, and execution_ticket.", "items": {"type": "object"}}
+            },
+            "required": ["mode", "finalist_count", "finalists"]
+        }
+    },
+    {
+        "name": "search_agent_directory",
+        "title": "Search Live Audited Agent Directory",
+        "description": "Browse and filter the audited Radial Switchboard phonebook by keyword substring and Virginia Scout health grade without consuming matchmaking call quota. Use when exploring catalog coverage by name, vendor, or grade; use matchmake_agent_crew instead when ranking capability-matched finalists for execution.",
+        "annotations": MCP_READONLY_ANNOTATIONS,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional case-insensitive keyword filter matched against agent_id, name, description, and endpoint URL."
+                },
+                "grade_filter": {
+                    "type": "string",
+                    "enum": ["AB", "A", "B", "C", "D", "ALL"],
+                    "description": "Filter by Virginia Scout audit grade ('AB' live <=350ms default, 'A' <=150ms, 'B' <=350ms, 'C' <=700ms, 'D' offline code, 'ALL' every non-poison record)."
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "description": "Maximum number of directory records to return (1..50, default 20)."
+                }
+            }
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "total_matching": {"type": "integer", "description": "Total phonebook records matching the filter."},
+                "returned_count": {"type": "integer", "description": "Number of records included in agents."},
+                "agents": {"type": "array", "description": "Matching directory records with grade, coupler, and endpoint metadata.", "items": {"type": "object"}}
+            },
+            "required": ["total_matching", "returned_count", "agents"]
         }
     },
     {
         "name": "get_agent_dossier",
-        "title": "Get Live Agent Security & Runtime Dossier",
-        "description": "Read-only lookup returning the 4-point Virginia Scout runtime heartbeat audit, latency metrics, 64-bit MGLE-NNP coupler code, and SHA-256 tool-schema hash dossier for a specific agent_id.",
+        "title": "Get Single Agent Security & Runtime Dossier",
+        "description": "Retrieve the complete 4-point Virginia Scout runtime heartbeat audit, measured RTT latency, 64-bit MGLE-NNP coupler breakdown, and SHA-256 tool-schema hash for one exact agent_id. Use only when inspecting a known agent_id; use search_agent_directory if you need to find the agent_id first.",
         "annotations": MCP_READONLY_ANNOTATIONS,
         "inputSchema": {
             "type": "object",
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "Unique agent or MCP server identifier from the Radial Switchboard phonebook (for example 'mcp://...' or registry slug)."
+                    "description": "Exact agent or MCP server identifier from the Radial Switchboard phonebook (e.g. 'mcp://...' or registry slug)."
                 }
             },
             "required": ["agent_id"]
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "found": {"type": "boolean", "description": "True when agent_id exists in the audited phonebook."},
+                "agent_id": {"type": "string", "description": "Requested agent identifier."},
+                "dossier": {"type": "object", "description": "Full runtime audit record, coupler code, and schema hash."}
+            },
+            "required": ["found", "agent_id"]
         }
     },
     {
         "name": "get_switchboard_telemetry",
-        "title": "Get Live Switchboard Pool & Usage Telemetry",
-        "description": "Read-only health and telemetry snapshot returning real audited Grade A/B pool counts, autonomous crawl progress, MCP/REST hook counters, and recent external bot/agent activity.",
+        "title": "Get Live Switchboard Health & Pool Telemetry",
+        "description": "Return global US-EAST4 switchboard health, Grade A/B/D/E/F pool counts, autonomous registry crawl cursor state, and external hook telemetry. Use for system-wide status and pool metrics; use get_agent_dossier for an individual agent.",
         "annotations": MCP_READONLY_ANNOTATIONS,
         "inputSchema": {
             "type": "object",
             "properties": {
                 "include_recent_activity": {
                     "type": "boolean",
-                    "description": "Optional flag (default true) indicating whether to include the rolling 25-event external hook and crawler activity feed in the response."
+                    "description": "When false, omits the 25-item recent_activity caller array for a compact payload (default true)."
                 }
             }
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "Service operational state ('ok')."},
+                "spec_version": {"type": "string", "description": "Active Radial Switchboard specification revision."},
+                "total_unsorted_pool": {"type": "integer", "description": "Total indexed MCP and A2A records."},
+                "live_callable_ab": {"type": "integer", "description": "Count of live verified Grade A and Grade B endpoints."}
+            },
+            "required": ["status", "spec_version", "total_unsorted_pool", "live_callable_ab"]
+        }
+    },
+    {
+        "name": "register_agent_endpoint",
+        "title": "Register or Re-Audit Public MCP/A2A Endpoint",
+        "description": "Submit a public HTTPS MCP or A2A endpoint for immediate live SSRF-guarded Virginia Scout interrogation, 64-bit MGLE-NNP grading, and directory indexing. Use when enrolling a new server or appealing a quarantined grade; do not use for private localhost/RFC1918 URLs.",
+        "annotations": MCP_WRITE_ANNOTATIONS,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "description": "Publicly reachable HTTPS MCP or A2A endpoint URL to interrogate in real time."
+                },
+                "agent_id": {
+                    "type": "string",
+                    "description": "Optional canonical slug or identifier (e.g. 'com.example/my-mcp'); generated automatically if omitted."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional summary of capabilities or reason for re-audit."
+                }
+            },
+            "required": ["endpoint"]
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "registered": {"type": "boolean", "description": "True when SSRF validation passed and live interrogation completed."},
+                "appeal_id": {"type": "string", "description": "Audit log reference ID."},
+                "audit_status": {"type": "string", "description": "Assigned Virginia Scout runtime audit status."},
+                "updated_record": {"type": "object", "description": "Resulting phonebook record and 64-bit coupler."}
+            },
+            "required": ["registered", "audit_status"]
+        }
+    },
+    {
+        "name": "report_execution_outcome",
+        "title": "Report Post-Handshake Execution Outcome",
+        "description": "Submit a single-use HMAC execution_ticket from matchmake_agent_crew to record empirical downstream task completion or failure (+0.05 clean delivery / -0.20 timeout or schema failure on Byte-2 Guarantee grade). Use after invoking a matched agent to close the quality feedback loop.",
+        "annotations": MCP_WRITE_ANNOTATIONS,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {
+                    "type": "string",
+                    "description": "Target agent_id that executed the downstream call."
+                },
+                "execution_ticket": {
+                    "type": "string",
+                    "description": "Single-use HMAC execution_ticket issued by matchmake_agent_crew."
+                },
+                "outcome_success": {
+                    "type": "boolean",
+                    "description": "True if the downstream agent fulfilled its schema contract cleanly; false on timeout, HTTP error, or malformed output."
+                },
+                "observed_latency_ms": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "Optional caller-observed round-trip execution latency in milliseconds."
+                }
+            },
+            "required": ["agent_id", "execution_ticket", "outcome_success"]
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "ticket_valid": {"type": "boolean", "description": "True when the single-use HMAC ticket passed verification and updated telemetry."},
+                "agent_id": {"type": "string", "description": "Evaluated target agent_id."}
+            },
+            "required": ["ticket_valid"]
         }
     },
 ]
@@ -1025,7 +1169,7 @@ def build_llms_txt(treasury_address: str) -> str:
         "- Endpoint: POST https://radialswitchboard.com/mcp",
         "- Protocol: MCP Streamable HTTP (2026-07-28 / 2025-06-18)",
         "- Official MCP Registry ID: com.radialswitchboard/matchmaker",
-        "- Tools via tools/list: flash_matchmake_agents, get_agent_dossier, get_switchboard_telemetry",
+        "- Tools via tools/list: matchmake_agent_crew (alias: flash_matchmake_agents), search_agent_directory, get_agent_dossier, get_switchboard_telemetry, register_agent_endpoint, report_execution_outcome",
         f"- Free tier: {FREE_DAILY_STARTER_CALLS} calls/day automatic, or POST /v1/keys/starter for X-Radial-Pass.",
         "",
         "## 2. Direct REST Matchmaking (POST https://radialswitchboard.com/v1/flash)",
@@ -1259,7 +1403,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     html = html.replace('<div class="score-value emerald" id="statTotalUses">0</div>', f'<div class="score-value emerald" id="statTotalUses">{int(hl.get("total_external_uses") or 0):,}</div>', 1)
                     html = html.replace('<div class="score-value" id="statLiveCallable">0</div>', f'<div class="score-value" id="statLiveCallable">{int(hl.get("live_callable_ab") or 0):,}</div>', 1)
                     html = html.replace('0 Indexed &bull; 0 Sweeps &bull; 0 Fake Seeds', f'{int(hl.get("total_unsorted_pool") or 0):,} Indexed &bull; {int(tel.get("scout_sweeps_completed") or 0):,} Sweeps &bull; 0 Fake Seeds', 1)
-                    html = html.replace("SPEC REV 3.5.2", f"SPEC REV {SPEC_VERSION}").replace("SPEC 3.5.2", f"SPEC {SPEC_VERSION}")
+                    html = re.sub(r"SPEC (REV )?3\.5\.\d+", lambda m: f"SPEC {m.group(1) or ''}{SPEC_VERSION}", html)
                     self._bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 else:
                     self._bytes(200, "text/html; charset=utf-8", f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
@@ -1353,7 +1497,8 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 c_ua = f"{cinfo.get('name')}/{cinfo.get('version')} ({ua})" if cinfo.get("name") else ua
                 if m == "notifications/initialized": self._bytes(202, "application/json", b"")
                 elif m == "initialize":
-                    runtime.record_event("mcp_initialize_handshakes", route="POST /mcp [initialize]", ua=c_ua, ip=ip)
+                    if "RadialScout" not in c_ua:
+                        runtime.record_event("mcp_initialize_handshakes", route="POST /mcp [initialize]", ua=c_ua, ip=ip)
                     self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"protocolVersion": str(prm.get("protocolVersion") or "2026-07-28"), "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "MglennP Radial Switchboard", "version": SPEC_VERSION}}})
                 elif m == "ping": self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {}})
                 elif m == "tools/list":
@@ -1363,17 +1508,62 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 elif m == "tools/call":
                     tn, ag = str(prm.get("name") or ""), (prm.get("arguments") if isinstance(prm.get("arguments"), dict) else {})
                     ex_h: Dict[str, str] = {}
-                    if tn == "flash_matchmake_agents":
+                    if tn in ("matchmake_agent_crew", "flash_matchmake_agents"):
                         ok_g, _, ex_h = self._enforce_gate(ip, ag)
                         if not ok_g: return
-                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [flash_matchmake_agents]", ua=ua, ip=ip)
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route=f"POST /mcp [{tn}]", ua=ua, ip=ip)
                         out = flash_unsorted_pool(list(runtime.pool_by_id.values()), ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), bool(ag.get("require_instant_zero_auth", False)), str(ag.get("max_latency_grade", "E")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"), caller_region=self._caller_region(None, ag))
+                    elif tn == "search_agent_directory":
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [search_agent_directory]", ua=ua, ip=ip)
+                        q_s = str(ag.get("query") or "").strip().lower()
+                        gf = str(ag.get("grade_filter") or "AB").strip().upper()
+                        lim = max(1, min(50, int(ag.get("limit", 20))))
+                        matched = []
+                        for rec in runtime.pool_by_id.values():
+                            gr = str(rec.get("latency_grade") or "E").upper()
+                            if rec.get("merit_grade") == "F" or gr == "F": continue
+                            if gf == "AB" and gr not in ("A", "B"): continue
+                            if gf in ("A", "B", "C", "D") and gr != gf: continue
+                            if q_s and q_s not in f"{rec.get('agent_id','')} {rec.get('name','')} {rec.get('description','')} {rec.get('endpoint','')}".lower():
+                                continue
+                            matched.append({
+                                "agent_id": rec.get("agent_id"),
+                                "name": rec.get("name"),
+                                "endpoint": rec.get("endpoint"),
+                                "mgle_nnp_stamp": rec.get("mgle_nnp_stamp"),
+                                "mgle_nnp_u64_hex": rec.get("mgle_nnp_u64_hex"),
+                                "latency_grade": gr,
+                                "merit_grade": rec.get("merit_grade"),
+                                "avg_latency_ms": rec.get("avg_latency_ms"),
+                                "audit_status": rec.get("audit_status"),
+                            })
+                        matched.sort(key=lambda x: (str(x.get("latency_grade") or "Z"), float(x.get("avg_latency_ms") or 9999.0)))
+                        out = {"total_matching": len(matched), "returned_count": min(len(matched), lim), "agents": matched[:lim]}
                     elif tn == "get_agent_dossier":
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [get_agent_dossier]", ua=ua, ip=ip)
-                        out = runtime.pool_by_id.get(str(ag.get("agent_id") or "")) or {"error": "Not found"}
+                        aid_req = str(ag.get("agent_id") or "").strip()
+                        rec = runtime.pool_by_id.get(aid_req)
+                        out = {"found": bool(rec), "agent_id": aid_req, "dossier": rec or {"error": "Not found"}}
                     elif tn == "get_switchboard_telemetry":
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [get_switchboard_telemetry]", ua=ua, ip=ip)
                         out = self._health()
+                        if ag.get("include_recent_activity") is False and isinstance(out.get("telemetry"), dict):
+                            out["telemetry"] = {k: v for k, v in out["telemetry"].items() if k != "recent_activity"}
+                    elif tn == "register_agent_endpoint":
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [register_agent_endpoint]", ua=ua, ip=ip)
+                        ep = str(ag.get("endpoint") or "").strip()
+                        if not ep or not is_safe_public_endpoint(ep):
+                            out = {"registered": False, "audit_status": "SSRF_GUARD_BLOCKED_NON_PUBLIC_ENDPOINT", "error": "Public HTTPS endpoint required"}
+                        else:
+                            prb = interrogate_live_endpoint({"agent_id": str(ag.get("agent_id") or f"mcp://sub-{secrets.token_hex(3)}"), "name": str(ag.get("agent_id") or ep), "description": str(ag.get("description") or ""), "endpoint": ep})
+                            runtime.pool_by_id[prb["agent_id"]] = prb; runtime._upsert_sb([prb])
+                            ar = {"id": f"APP-{len(runtime.appeals_log)+1}", "slug": prb["agent_id"], "endpoint": prb["endpoint"], "status": prb["audit_status"]}
+                            runtime.appeals_log.insert(0, ar)
+                            out = {"registered": True, "appeal_id": ar["id"], "audit_status": prb["audit_status"], "updated_record": prb}
+                    elif tn == "report_execution_outcome":
+                        runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [report_execution_outcome]", ua=ua, ip=ip)
+                        lv = ag.get("observed_latency_ms")
+                        out = runtime.verify_outcome(str(ag.get("agent_id") or ""), str(ag.get("execution_ticket") or ""), bool(ag.get("outcome_success", True)), float(lv) if isinstance(lv, (int, float)) else None)
                     else: self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unknown tool"}}); return
                     self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": json.dumps(out)}], "structuredContent": out, "isError": False}}, ex_h or None)
                 else:
@@ -1477,10 +1667,17 @@ def run_self_test() -> int:
         with urllib.request.urlopen(f"{base}/v1/phonebook/export?format=jsonl&ui_observer=true", timeout=5) as r_jl:
             assert r_jl.headers.get("X-Radial-Snapshot-HMAC") and len(r_jl.read().decode().strip().splitlines()) == 12
         kr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/keys/starter", data=b"{}", headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
-        mr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "flash_matchmake_agents", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
+        tl = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 10, "method": "tools/list", "params": {}}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        tnames = [t["name"] for t in tl["result"]["tools"]]
+        assert len(tnames) == 6 and "matchmake_agent_crew" in tnames and "report_execution_outcome" in tnames
+        sr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "search_agent_directory", "arguments": {"query": "postgres", "limit": 5}}}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        assert sr["result"]["structuredContent"]["total_matching"] >= 1
+        mr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "matchmake_agent_crew", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
         tkt, tid = mr["result"]["structuredContent"]["finalists"][0]["execution_ticket"], mr["result"]["structuredContent"]["finalists"][0]["agent_id"]
-        ok_o = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/outcome", data=json.dumps({"agent_id": tid, "execution_ticket": tkt, "outcome_success": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
-        assert ok_o["ticket_valid"] is True
+        mr_alias = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "flash_matchmake_agents", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
+        assert mr_alias["result"]["structuredContent"]["finalist_count"] >= 1
+        ok_o = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 12, "method": "tools/call", "params": {"name": "report_execution_outcome", "arguments": {"agent_id": tid, "execution_ticket": tkt, "outcome_success": True, "observed_latency_ms": 48.5}}}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        assert ok_o["result"]["structuredContent"]["ticket_valid"] is True
     finally:
         srv.shutdown(); srv.server_close()
     print(f"[PASS] Crisp Spec {SPEC_VERSION} Autonomous Global-Scale Engine 100% Verified.")

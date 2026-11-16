@@ -1,11 +1,11 @@
-# MglennP Radial Switchboard (Spec Rev 3.5.3)
+# MglennP Radial Switchboard (Spec Rev 3.5.4)
 
 [![mcptry](https://mcptry.com/badge/com.radialswitchboard/matchmaker)](https://mcptry.com/servers/com.radialswitchboard/matchmaker)
 
 Autonomous 64-Bit `MGLE-NNP` AI-to-AI MCP & A2A Agent Matchmaker, Runtime Poison/SSRF Auditor, 3-Agent Complementary Crew Router, and Base Mainnet USDC `x402` / `$0` Canary Scout Clearinghouse.
 
 - **Streamable HTTP MCP:** `https://radialswitchboard.com/mcp`
-- **Official MCP Registry:** `com.radialswitchboard/matchmaker` (`3.5.3`)
+- **Official MCP Registry:** `com.radialswitchboard/matchmaker` (`3.5.4`)
 - **Live Explorer:** https://radialswitchboard.com
 - **Agent Playbook (llms.txt):** https://radialswitchboard.com/llms.txt
 - **OpenAPI 3.1 Schema:** https://radialswitchboard.com/openapi.json
