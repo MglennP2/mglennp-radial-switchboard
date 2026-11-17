@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MglennP Radial Switchboard &mdash; Spec Rev 3.5.4 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
-<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.5.4): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
+<title>MglennP Radial Switchboard &mdash; Spec Rev 3.5.6 | 64-Bit MCP Matchmaker &amp; Agent Hook</title>
+<meta name="description" content="MglennP Radial Switchboard (Spec Rev 3.5.6): 100% Real-Only 64-bit MGLE-NNP MCP agent matchmaker, copy-paste agent hook, 3-agent crew assembler, and Base USDC x402 / Canary Scout gate." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -137,7 +137,7 @@ td.mono { font-family:var(--fm); font-size:0.74rem; }
 <div class="brand-cluster">
 <span class="brand-dot" aria-hidden="true"></span>
 <span class="brand-title">MGLENNP RADIAL SWITCHBOARD</span>
-<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.5</span>
+<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.6</span>
 </div>
 <div class="topbar-right">
 <div class="contact-chip">
@@ -497,8 +497,8 @@ try {
 const resp = await fetch(apiUrl("/v1/health"));
 if (!resp.ok) throw new Error("HTTP " + resp.status);
 const data = await resp.json();
-badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.5");
-document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.5");
+badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.6");
+document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.6");
 const tel = data.telemetry || {};
 const mcp = Number(tel.mcp_jsonrpc_calls || 0), rest = Number(tel.rest_matchmake_calls || 0), bc = Number(tel.ai_beacon_discovery_pulls || 0), rm = Number(tel.room_handshakes_completed || 0);
 const realCalls = mcp + rest + rm;
@@ -542,7 +542,7 @@ if (pInit) {
 badge.className = "conn-pill offline"; badge.textContent = "OFFLINE PREVIEW (COUNTERS = 0)";
 }
 try {
-const dr = await fetch(apiUrl("/v1/directory/live"));
+const dr = await fetch(apiUrl("/v1/directory/live?limit=120"));
 if (dr.ok) { const dj = await dr.json(); state.liveDirectoryRows = Array.isArray(dj.agents) ? dj.agents : []; renderDirectoryTable(); }
 } catch (e2) { renderDirectoryTable(); }
 }

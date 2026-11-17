@@ -7,7 +7,7 @@ import io, ipaddress, json, os, random, re, secrets, socketserver, ssl, threadin
 import urllib.error, urllib.parse, urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-SPEC_VERSION = "3.5.5"
+SPEC_VERSION = "3.5.6"
 SCHEMA_NIBBLE = 0x3
 CONTACT_EMAIL = "support@radialswitchboard.com"
 PUBLIC_GITHUB_REPO = "https://github.com/MglennP2/mglennp-radial-switchboard"
@@ -356,9 +356,9 @@ def assemble_complementary_crew(scored: Sequence[Tuple[float, Dict[str, Any]]], 
     enr = [(sc, extract_vendor_domain(str(r.get("endpoint") or "")), int(r.get("domain_mask") or (int(r.get("mgle_nnp_64bit") or 0) & 0x00FFFFFF)), r) for sc, r in scored]
     u_ids, u_vends, crew, masks = set(), set(), [], []
     roles = (
-        ("1_COMPUTE_EXECUTION", lambda s, v, m: s + (0.12 if (m & COMPUTE_MASK) else 0.0) + ((m & req_cap).bit_count() * 0.08 if req_cap else 0.0)),
-        ("2_DOMAIN_KNOWLEDGE_COMPLEMENT", lambda s, v, m: s + (0.25 if v not in u_vends else -0.15) + (((m & ~(masks[0] if masks else 0)) & req_cap).bit_count() * 0.22 if req_cap else 0.0)),
-        ("3_INDEPENDENT_VERIFICATION", lambda s, v, m: s + (0.30 if v not in u_vends else -0.20) + (0.18 if (m & VERIFY_MASK) else 0.0)),
+        ("1_COMPUTE_EXECUTION", lambda s, v, m: s + (0.14 if (m & COMPUTE_MASK) else 0.0) + (((m & req_cap).bit_count() * 0.16 - max(0, m.bit_count() - max(1, req_cap.bit_count()) - 3) * 0.02) if req_cap else 0.0) - (0.35 if (req_cap and (m & req_cap) == 0) else 0.0)),
+        ("2_DOMAIN_KNOWLEDGE_COMPLEMENT", lambda s, v, m: s + (0.28 if v not in u_vends else -0.25) + ((((m & ~(masks[0] if masks else 0)) & req_cap).bit_count() * 0.26 + ((m & req_cap).bit_count() / max(1, m.bit_count())) * 0.18) if req_cap else 0.0) - (0.35 if (req_cap and (m & req_cap) == 0) else 0.0)),
+        ("3_INDEPENDENT_VERIFICATION", lambda s, v, m: s + (0.32 if v not in u_vends else -0.25) + (0.20 if (m & VERIFY_MASK) else 0.0) - max(0, m.bit_count() - 8) * 0.015),
     )
     for r_name, fn in roles:
         best, bs = None, -999.0
@@ -393,10 +393,18 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
         if ((u32 >> 20) & 0xF) > max_guar_nib or ((u32 >> 16) & 0xF) > eff_max_nib or (zero_hop and ((u32 >> 8) & 0xF) != 1): continue
         wt = float(rec.get("synaptic_weight") or 0.80)
         geo_boost = 0.08 if (c_reg != "GLOBAL" and rec_zone == c_reg) else (0.05 if rec_zone == "G" else 0.0)
-        bs = round(wt + geo_boost + 0.05 * (6 - ((u32 >> 24) & 0xF)) + 0.02 * (6 - ((u32 >> 16) & 0xF)), 4)
-        viable.append((bs + (l32 & req_bits).bit_count() * 0.12, rec))
+        req_c24 = req_bits & 0x00FFFFFF
+        ag_c24 = l32 & 0x00FFFFFF
+        ov_c24 = (ag_c24 & req_c24).bit_count()
+        ag_pop = max(1, ag_c24.bit_count())
+        extra_bits = max(0, ag_pop - max(1, req_c24.bit_count()))
+        spec_bonus = round((ov_c24 / ag_pop) * 0.28 - max(0, extra_bits - 3) * 0.018, 4) if req_c24 else 0.0
+        vt_len = len(((rec.get("dossier_json") or {}).get("verified_tools")) or [])
+        inv_bonus = 0.06 if (vt_len > 0 and int(rec.get("wired_tool_count") or 0) >= vt_len) else -0.04
+        bs = round(wt + geo_boost + spec_bonus + inv_bonus + 0.05 * (6 - ((u32 >> 24) & 0xF)) + 0.02 * (6 - ((u32 >> 16) & 0xF)), 4)
+        viable.append((round(bs + ov_c24 * 0.14, 4), rec))
         if (l32 & req_bits) == req_bits: exact.append((bs, rec))
-        elif (l32 & req_bits).bit_count() > 0: partial.append(((l32 & req_bits).bit_count(), wt + geo_boost, rec))
+        elif ov_c24 > 0: partial.append((ov_c24, bs, rec))
     exact.sort(key=lambda x: x[0], reverse=True); viable.sort(key=lambda x: x[0], reverse=True)
     crew_m = None
     if (mode or "").strip().lower() == "crew":
@@ -524,7 +532,7 @@ def build_agent_record_and_dossier(aid: str, name: str, desc: str, ep: str, aliv
     return {"agent_id": aid, "name": name, "description": desc[:400], "endpoint": ep, "geo_zone": zone, "merit_grade": merit_g, "guarantee_grade": guar_g, "latency_grade": lat_g, "mgle_nnp_stamp": stamp, "mgle_nnp_64bit": u64, "mgle_nnp_u64_hex": u64_hex, "domain_mask": c_mask, "avg_latency_ms": eff, "synaptic_weight": n_wt, "wired_tool_count": len(c_tools), "tool_schema_hash_16": h16, "auth_mode": auth_m, "poison_scan_clean": p_ok, "encounter_count": enc, "room_completions": wins, "room_failures": fails, "dossier_json": dos, "audit_status": st, "last_audited_at": now_iso}
 
 def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 3.5) -> Dict[str, Any]:
-    aid, nm, ds, ep = str(row.get("agent_id") or row.get("id") or ""), str(row.get("name") or ""), str(row.get("description") or ""), str(row.get("endpoint") or "").strip()
+    aid, nm, ds, ep = str(row.get("agent_id") or row.get("id") or ""), str(row.get("name") or ""), str(row.get("description") or "").split(" /*RADIAL_TOOLS:")[0].strip(), str(row.get("endpoint") or "").strip()
     if not is_safe_public_endpoint(ep) or any(h in ep.lower() for h in ("github.com/", "gitlab.com/", "npmjs.com/", "pypi.org/")):
         return build_agent_record_and_dossier(aid, nm or aid, ds, ep, False, None, None, [], "local_stdio_code", prev_record=row)
     ctx = ssl.create_default_context()
@@ -551,7 +559,7 @@ def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 3.5) -> 
         try:
             with urllib.request.urlopen(urllib.request.Request(ep, data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}).encode(), headers=wh, method="POST"), timeout=timeout_sec, context=ctx) as r2:
                 warm = round((time.perf_counter() - t1) * 1000.0, 2)
-                ps = r2.read(131072).decode("utf-8", errors="replace").strip()
+                ps = r2.read(524288).decode("utf-8", errors="replace").strip()
                 if not ps.startswith("{"):
                     for ln in ps.splitlines():
                         if ln.strip().startswith("data:") and "{" in ln: ps = ln.split("data:", 1)[1].strip(); break
@@ -815,11 +823,21 @@ class StandaloneSwitchboardRuntime:
                     lat_val = float(raw_lat) if (raw_lat is not None and int(raw_lat) > 0) else (85.0 if guar_c in ("A", "B") else None)
                     zone = str(row.get("neighborhood") or infer_endpoint_geo_zone(ep, None, lat_val))[:1].upper()
                     raw_desc_full = str(row.get("description") or "")
-                    clean_desc, hyd_tools = raw_desc_full, []
-                    if " /*RADIAL_TOOLS:" in raw_desc_full and raw_desc_full.endswith("*/"):
+                    clean_desc, hyd_tools, hyd_wired = raw_desc_full, [], 0
+                    if " /*RADIAL_TOOLS:" in raw_desc_full:
                         clean_desc, t_blob = raw_desc_full.split(" /*RADIAL_TOOLS:", 1)
-                        try: hyd_tools = json.loads(t_blob[:-2])
-                        except Exception: hyd_tools = []
+                        if t_blob.endswith("*/"):
+                            try:
+                                parsed_rt = json.loads(t_blob[:-2])
+                                if isinstance(parsed_rt, dict):
+                                    hyd_tools = parsed_rt.get("t") if isinstance(parsed_rt.get("t"), list) else []
+                                    hyd_wired = int(parsed_rt.get("n") or len(hyd_tools))
+                                elif isinstance(parsed_rt, list):
+                                    hyd_tools = parsed_rt
+                                    hyd_wired = len(hyd_tools)
+                            except Exception:
+                                hyd_tools, hyd_wired = [], 0
+                    clean_desc = clean_desc.strip()
                     fp16 = str(row.get("fingerprint_hex") or "0000000000000000").replace("0x", "")[-16:].rjust(16, "0")
                     has_real_schema = (fp16 != "0000000000000000")
                     if ((raw_u64 >> 60) & 0x3) == SCHEMA_NIBBLE and raw_u64 > 0:
@@ -843,7 +861,7 @@ class StandaloneSwitchboardRuntime:
                             "latency_grade": lat_c, "mgle_nnp_stamp": eff_code, "mgle_nnp_64bit": eff_u64,
                             "mgle_nnp_u64_hex": f"0x{eff_u64:016X}", "domain_mask": c_mask, "avg_latency_ms": lat_val,
                             "synaptic_weight": min(0.78, float(row.get("synaptic_weight") or 0.75)) if eff_guar == "C" else float(row.get("synaptic_weight") or 0.80),
-                            "wired_tool_count": max(eff_tools, len(hyd_tools)),
+                            "wired_tool_count": max(eff_tools, hyd_wired, len(hyd_tools)),
                             "tool_schema_hash_16": fp16,
                             "auth_mode": eff_auth, "poison_scan_clean": guar_c != "F",
                             "encounter_count": max(1, int(row.get("handshakes_completed") or 0)),
@@ -856,7 +874,7 @@ class StandaloneSwitchboardRuntime:
                         self.pool_by_id[aid] = rec
                     else:
                         prev_shim = {"synaptic_weight": row.get("synaptic_weight") or 0.80, "guarantee_grade": guar_c, "room_completions": row.get("handshakes_completed") or 0, "room_failures": row.get("handshakes_failed") or 0}
-                        rec = build_agent_record_and_dossier(aid, str(row.get("name") or aid), str(row.get("description") or ""), ep, guar_c in ("A", "B"), lat_val, lat_val, [{"name": "verified_schema", "description": str(row.get("description") or ""), "inputSchema": {"type": "object"}}] if has_real_schema else [], prev_record=prev_shim, geo_zone=zone)
+                        rec = build_agent_record_and_dossier(aid, str(row.get("name") or aid), clean_desc, ep, guar_c in ("A", "B"), lat_val, lat_val, [{"name": "verified_schema", "description": str(row.get("description") or ""), "inputSchema": {"type": "object"}}] if has_real_schema else [], prev_record=prev_shim, geo_zone=zone)
                         if guar_c == "F":
                             rec["guarantee_grade"], rec["audit_status"] = "F", "SLASHED_POISON_GRADE_F"
                         self.pool_by_id[aid] = rec
@@ -878,12 +896,20 @@ class StandaloneSwitchboardRuntime:
             lat_i = int(round(float(lat_raw))) if isinstance(lat_raw, (int, float)) else 0
             zn = str(r.get("geo_zone") or "E")[:1].upper()
             db_neigh = zn if zn in ("E", "A", "O", "G") else "G"
+            vt_list = [
+                {"tool": str(t.get("tool") or "")[:48], "required": [str(x)[:32] for x in (t.get("required") or [])[:4]], "inputs": {str(ik)[:32]: str(iv)[:16] for ik, iv in list((t.get("inputs") or {}).items())[:4]}}
+                for t in ((r.get("dossier_json") or {}).get("verified_tools") or [])[:5]
+                if isinstance(t, dict) and t.get("tool")
+            ]
+            rt_trailer = (" /*RADIAL_TOOLS:" + json.dumps({"n": max(int(r.get("wired_tool_count") or 0), len(vt_list)), "t": vt_list}, separators=(",", ":")) + "*/") if vt_list else ""
+            clean_d = str(r.get("description") or "").split(" /*RADIAL_TOOLS:")[0].strip()
+            safe_desc = clean_d[:max(80, 900 - len(rt_trailer))] + rt_trailer
             dedup[aid] = {
                 "agent_id": aid,
                 "name": str(r.get("name") or aid),
                 "protocol": "A2A" if aid.startswith("a2a://") else "MCP",
                 "endpoint": str(r.get("endpoint") or ""),
-                "description": (str(r.get("description") or "").split(" /*RADIAL_TOOLS:")[0][:240] + (" /*RADIAL_TOOLS:" + json.dumps([{"tool": t.get("tool"), "required": (t.get("required") or [])[:5], "inputs": dict(list((t.get("inputs") or {}).items())[:5])} for t in ((r.get("dossier_json") or {}).get("verified_tools") or [])[:4]], separators=(",", ":")) + "*/" if ((r.get("dossier_json") or {}).get("verified_tools")) else ""))[:400],
+                "description": safe_desc,
                 "radial_bitmask": int(r.get("domain_mask") or (u64 & 0x00FFFFFF)),
                 "fingerprint_hex": str(r.get("tool_schema_hash_16") or "0000000000000000")[:16],
                 "mglennp_code": stamp,
@@ -951,6 +977,27 @@ class StandaloneSwitchboardRuntime:
         self.pool_by_id[aid] = probed; self._upsert_sb([probed])
         return {"agent_id": aid, "ticket_valid": True, "independent_probe_alive": alive, "quarantined": not alive}
 
+    def ensure_finalists_hydrated(self, caps: Sequence[str], zero_auth: bool = True, max_lat: str = "C", top_k: int = DEFAULT_FLASH_TOP_K, mode: str = "top10_varied", caller_region: str = "GLOBAL") -> Dict[str, Any]:
+        out = flash_unsorted_pool(list(self.pool_by_id.values()), caps, zero_auth=zero_auth, max_lat=max_lat, top_k=top_k, mode=mode, caller_region=caller_region)
+        if not self.hydrate_external:
+            return out
+        missing = [self.pool_by_id[f["agent_id"]] for f in (out.get("finalists") or []) if not f.get("tools_preview") and f.get("agent_id") in self.pool_by_id]
+        if missing:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(missing))) as ex:
+                refreshed = list(ex.map(lambda r: interrogate_live_endpoint(r, timeout_sec=3.0), missing))
+            for prb in refreshed:
+                self.pool_by_id[prb["agent_id"]] = prb
+            threading.Thread(target=self._upsert_sb, args=(refreshed,), daemon=True).start()
+            out = flash_unsorted_pool(list(self.pool_by_id.values()), caps, zero_auth=zero_auth, max_lat=max_lat, top_k=top_k, mode=mode, caller_region=caller_region)
+        if zero_auth:
+            valid_fins = [f for f in (out.get("finalists") or []) if f.get("tools_preview") and int(f.get("wired_tool_count") or 0) >= len(f.get("tools_preview") or [])]
+            for idx, vf in enumerate(valid_fins, 1):
+                vf["rank"] = idx
+            out["finalists"] = valid_fins
+            out["finalist_count"] = len(valid_fins)
+            out["top_match"] = valid_fins[0] if valid_fins else {}
+        return out
+
     def run_live_scout_sweep(self, limit: int = 80) -> Dict[str, Any]:
         lim = max(1, min(100, int(limit or 80)))
         with self._lock:
@@ -1009,7 +1056,6 @@ class StandaloneSwitchboardRuntime:
             time.sleep(600.0)
 
 MCP_READONLY_ANNOTATIONS = {
-    "title": "Read-Only Switchboard Query",
     "readOnlyHint": True,
     "destructiveHint": False,
     "idempotentHint": True,
@@ -1017,7 +1063,6 @@ MCP_READONLY_ANNOTATIONS = {
 }
 
 MCP_WRITE_ANNOTATIONS = {
-    "title": "Validated Switchboard State Update",
     "readOnlyHint": False,
     "destructiveHint": False,
     "idempotentHint": True,
@@ -1057,7 +1102,7 @@ MCP_SERVER_TOOLS = [
                 },
                 "require_instant_zero_auth": {
                     "type": "boolean",
-                    "description": "True restricts results strictly to open zero-credential endpoints callable immediately without API keys or OAuth."
+                    "description": "True (default: true) restricts results strictly to open zero-credential endpoints with verified non-zero tools/list schemas callable immediately without API keys or OAuth."
                 },
                 "max_latency_grade": {
                     "type": "string",
@@ -1373,7 +1418,7 @@ def build_openapi_spec(treasury_address: str) -> Dict[str, Any]:
             "/mcp": {
                 "post": {
                     "operationId": "mcpJsonRpc",
-                    "summary": "Streamable HTTP MCP JSON-RPC 2.0 endpoint (initialize, tools/list, tools/call across 6 tools)",
+                    "summary": "Streamable HTTP MCP JSON-RPC 2.0 endpoint exposing 6 tools: " + ", ".join(t["name"] for t in MCP_SERVER_TOOLS),
                     "security": [{}, {"RadialPassHeader": []}],
                     "parameters": [{"name": "X-Radial-Pass", "in": "header", "required": False, "schema": {"type": "string"}}],
                     "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["jsonrpc", "method"], "properties": {"jsonrpc": {"type": "string", "const": "2.0"}, "id": {"type": ["integer", "string"]}, "method": {"type": "string", "enum": ["initialize", "notifications/initialized", "ping", "tools/list", "tools/call"]}, "params": {"type": "object"}}}}}},
@@ -1543,7 +1588,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 "genesis_enroll_endpoint": "https://radialswitchboard.com/v1/enroll", "usdc_treasury_base": runtime.gate.treasury_address,
                 "total_unsorted_pool": len(recs), "live_callable_ab": ab, "offline_code_d": gd, "quarantined_e": ge, "slashed_poison_f": gf,
                 "enrolled_apprentices": len(runtime.enrolled_apprentices), "crawl_cursor_state": dict(runtime.crawl_cursor),
-                "total_external_uses": runtime.telemetry["total_external_uses"], "telemetry": dict(runtime.telemetry),
+                "total_external_uses": int(runtime.telemetry.get("mcp_jsonrpc_calls") or 0) + int(runtime.telemetry.get("rest_matchmake_calls") or 0) + int(runtime.telemetry.get("room_handshakes_completed") or 0), "discovery_pulls": int(runtime.telemetry.get("ai_beacon_discovery_pulls") or 0), "telemetry": dict(runtime.telemetry),
                 "usdc_settled_usd": round(sum(float(x.get("gross_usdc_received") or 0.0) for x in runtime.gate.tax_revenue_ledger), 6),
                 "tax_reserved_usd": round(sum(float(x.get("tax_reserve_30pct_usd") or 0.0) for x in runtime.gate.tax_revenue_ledger), 6),
             }
@@ -1610,7 +1655,15 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                             for r in top_rows
                         )
                         html = re.sub(r'<tbody id="directoryTableBody">.*?</tbody>', f'<tbody id="directoryTableBody">{ssr_trs}</tbody>', html, count=1, flags=re.S)
-                    html = re.sub(r"SPEC (REV )?3\.5\.\d+", lambda m: f"SPEC {m.group(1) or ''}{SPEC_VERSION}", html)
+                    init_c = int(tel.get("mcp_initialize_handshakes") or 0)
+                    tl_c = int(tel.get("mcp_tools_list_probes") or 0)
+                    br_c = int(tel.get("bridge_script_downloads") or 0)
+                    html = html.replace('id="pulseMcpInit" style="font-size:1.45rem;font-weight:700;color:#38bdf8;margin-top:4px;">0</div>', f'id="pulseMcpInit" style="font-size:1.45rem;font-weight:700;color:#38bdf8;margin-top:4px;">{init_c:,}</div>', 1)
+                    html = html.replace('id="pulseToolsList" style="font-size:1.45rem;font-weight:700;color:#fbbf24;margin-top:4px;">0</div>', f'id="pulseToolsList" style="font-size:1.45rem;font-weight:700;color:#fbbf24;margin-top:4px;">{tl_c:,}</div>', 1)
+                    html = html.replace('id="pulseActiveCalls" style="font-size:1.45rem;font-weight:700;color:#10b981;margin-top:4px;">0</div>', f'id="pulseActiveCalls" style="font-size:1.45rem;font-weight:700;color:#10b981;margin-top:4px;">{(mcp_c + rest_c):,}</div>', 1)
+                    html = html.replace('id="pulseBeacons" style="font-size:1.45rem;font-weight:700;color:#c084fc;margin-top:4px;">0</div>', f'id="pulseBeacons" style="font-size:1.45rem;font-weight:700;color:#c084fc;margin-top:4px;">{bcn_c:,}</div>', 1)
+                    html = html.replace('id="pulseBridgeSub" style="font-size:0.72rem;color:#64748b;">0 bridge pulls</div>', f'id="pulseBridgeSub" style="font-size:0.72rem;color:#64748b;">{br_c:,} bridge pulls</div>', 1)
+                    html = re.sub(r"(?i)spec (rev )?3\.5\.\d+", lambda m: f"{m.group(0).split('3.5')[0]}{SPEC_VERSION}", html)
                     self._bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 else:
                     self._bytes(200, "text/html; charset=utf-8", f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
@@ -1634,11 +1687,11 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             elif p == "/.well-known/agents.json":
                 if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._json(200, [build_a2a_agent_card()])
-            elif p in ("/mcp/server-card", "/.well-known/ai-catalog.json"):
+            elif p in ("/mcp/server-card", "/.well-known/mcp.json", "/.well-known/ai-catalog.json"):
                 if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
-                c = {"$schema": "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json", "name": "com.radialswitchboard/matchmaker", "title": "MglennP Radial Switchboard", "version": SPEC_VERSION, "description": "64-bit MGLE-NNP MCP & A2A agent matchmaker and runtime auditor.", "contact": {"name": "MglennP", "email": CONTACT_EMAIL}, "supportedProtocolVersions": ["2026-07-28", "2025-06-18"], "remotes": [{"type": "streamable-http", "url": "https://radialswitchboard.com/mcp"}]}
+                c = {"$schema": "https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json", "name": "com.radialswitchboard/matchmaker", "title": "MglennP Radial Switchboard", "version": SPEC_VERSION, "description": "64-bit MGLE-NNP zero-auth MCP & A2A agent matchmaker, poison auditor, and 3-agent crew router.", "contact": {"name": "MglennP", "email": CONTACT_EMAIL}, "supportedProtocolVersions": ["2026-07-28", "2025-06-18"], "remotes": [{"type": "streamable-http", "url": "https://radialswitchboard.com/mcp"}], "authentication": {"schemes": ["none", "X-Radial-Pass"], "freeCallsPerUtcDayPerIp": FREE_DAILY_STARTER_CALLS}, "tools": [{"name": t["name"], "title": t["title"], "description": t["description"]} for t in MCP_SERVER_TOOLS]}
                 self._json(200, {"servers": [c]} if p == "/.well-known/ai-catalog.json" else c)
-            elif p in ("/openapi.json", "/.well-known/mcp.json"):
+            elif p == "/openapi.json":
                 if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 self._json(200, build_openapi_spec(runtime.gate.treasury_address))
             elif p == "/v1/health":
@@ -1648,8 +1701,17 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 s = sorted(float(flash_unsorted_pool(recs, ["sql", "database"], max_lat="E")["single_pass_flash_ms"]) for _ in range(10))
                 self._json(200, {"spec_version": SPEC_VERSION, "agents_scanned": len(recs), "default_top_k": DEFAULT_FLASH_TOP_K, "p50_bitwise_ms": s[len(s) // 2] if s else 0.0})
             elif p == "/v1/directory/live":
-                recs = sorted(runtime.pool_by_id.values(), key=lambda x: (0 if x.get("guarantee_grade") == "A" else 1, float(x.get("avg_latency_ms") or 99999.0)))
-                self._json(200, {"spec_version": SPEC_VERSION, "contact_email": CONTACT_EMAIL, "synthetic_seed_rows": 0, "total_agents": len(recs), "appeals": runtime.appeals_log, "tax_ledger": runtime.gate.tax_revenue_ledger, "agents": recs[:250]})
+                lim_d = max(1, min(250, int((qs.get("limit") or ["50"])[0] if str((qs.get("limit") or ["50"])[0]).isdigit() else 50)))
+                off_d = max(0, int((qs.get("offset") or ["0"])[0] if str((qs.get("offset") or ["0"])[0]).isdigit() else 0))
+                grd_d = str((qs.get("grade") or ["ALL"])[0]).upper()
+                inc_dos = str((qs.get("include_dossier") or ["false"])[0]).lower() in ("1", "true")
+                all_r = list(runtime.pool_by_id.values())
+                if grd_d == "AB": all_r = [r for r in all_r if r.get("guarantee_grade") in ("A", "B")]
+                elif grd_d in ("A", "B", "C", "D", "E", "F"): all_r = [r for r in all_r if r.get("guarantee_grade") == grd_d]
+                recs = sorted(all_r, key=lambda x: (0 if x.get("guarantee_grade") == "A" else 1, -len(((x.get("dossier_json") or {}).get("verified_tools")) or []), float(x.get("avg_latency_ms") or 99999.0)))
+                page_r = recs[off_d:off_d + lim_d]
+                slim_r = page_r if inc_dos else [{**{k: v for k, v in r.items() if k != "dossier_json"}, "tools_preview": ((r.get("dossier_json") or {}).get("verified_tools") or [])[:4]} for r in page_r]
+                self._json(200, {"spec_version": SPEC_VERSION, "contact_email": CONTACT_EMAIL, "synthetic_seed_rows": 0, "total_agents": len(all_r), "limit": lim_d, "offset": off_d, "returned_count": len(slim_r), "next_offset": (off_d + lim_d) if (off_d + lim_d) < len(all_r) else None, "appeals": runtime.appeals_log[:20], "tax_ledger": runtime.gate.tax_revenue_ledger[:20], "agents": slim_r})
             elif p == "/v1/phonebook/export":
                 if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
                 fmt = (qs.get("format") or ["jsonl"])[0].lower()
@@ -1680,7 +1742,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     runtime.record_event("rest_matchmake_calls", ext_call=True, route=f"POST {p}", ua=ua, ip=ip)
                 else:
                     ex_h = {}
-                self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), infer_capabilities_from_intent((qs.get("intent") or ["mcp"])[0]), mode=(qs.get("mode") or ["top10_varied"])[0], caller_region=self._caller_region(qs, None)), ex_h)
+                self._json(200, runtime.ensure_finalists_hydrated(infer_capabilities_from_intent((qs.get("intent") or ["mcp"])[0]), zero_auth=((qs.get("zero_auth") or ["true"])[0].lower() not in ("0", "false")), max_lat=(qs.get("max_latency_grade") or ["C"])[0], mode=(qs.get("mode") or ["top10_varied"])[0], caller_region=self._caller_region(qs, None)), ex_h)
             elif p.startswith("/v1/credential/"):
                 did = urllib.parse.unquote(p[len("/v1/credential/"):])
                 cert = runtime.enrolled_apprentices.get(did) or runtime.pool_by_id.get(did)
@@ -1719,7 +1781,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                         ok_g, _, ex_h = self._enforce_gate(ip, ag)
                         if not ok_g: return
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route=f"POST /mcp [{tn}]", ua=ua, ip=ip)
-                        out = flash_unsorted_pool(list(runtime.pool_by_id.values()), ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), bool(ag.get("require_instant_zero_auth", True)), str(ag.get("max_latency_grade", "C")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"), caller_region=self._caller_region(None, ag))
+                        out = runtime.ensure_finalists_hydrated(ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), zero_auth=bool(ag.get("require_instant_zero_auth", True)), max_lat=str(ag.get("max_latency_grade", "C")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"), caller_region=self._caller_region(None, ag))
                     elif tn == "search_agent_directory":
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [search_agent_directory]", ua=ua, ip=ip)
                         q_s = str(ag.get("query") or "").strip().lower()
@@ -1779,7 +1841,15 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                         lv = ag.get("observed_latency_ms")
                         out = runtime.verify_outcome(str(ag.get("agent_id") or ""), str(ag.get("execution_ticket") or ""), bool(ag.get("outcome_success", True)), float(lv) if isinstance(lv, (int, float)) else None)
                     else: self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unknown tool"}}); return
-                    txt_summary = json.dumps({"tool": tn, "finalist_count": out.get("finalist_count"), "match_mode": out.get("match_mode"), "top_endpoints": [{"agent_id": f.get("agent_id"), "endpoint": f.get("endpoint"), "transport": f.get("transport"), "auth_mode": f.get("auth_mode"), "tools": [t.get("tool") for t in (f.get("tools_preview") or [])], "execution_ticket": f.get("execution_ticket")} for f in (out.get("finalists") or [])[:5]]}, separators=(",", ":")) if "finalists" in out else json.dumps(out, separators=(",", ":"))
+                    txt_summary = json.dumps({
+    "spec_version": out.get("spec_version"),
+    "match_mode": out.get("match_mode"),
+    "finalist_count": out.get("finalist_count"),
+    "pool_scanned_unsorted": out.get("pool_scanned_unsorted"),
+    "single_pass_flash_ms": out.get("single_pass_flash_ms"),
+    "crew_manifest": out.get("crew_manifest"),
+    "finalists": [{"rank": f.get("rank"), "agent_id": f.get("agent_id"), "name": f.get("name"), "endpoint": f.get("endpoint"), "transport": f.get("transport"), "auth_mode": f.get("auth_mode"), "wired_tool_count": f.get("wired_tool_count"), "tool_schema_hash_16": f.get("tool_schema_hash_16"), "tools_preview": f.get("tools_preview"), "crew_role": f.get("crew_role"), "execution_ticket": f.get("execution_ticket")} for f in (out.get("finalists") or [])[:10]]
+}, separators=(",", ":")) if "finalists" in out else json.dumps(out, separators=(",", ":"))
                     self._bytes(200, "application/json; charset=utf-8", json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": txt_summary}], "structuredContent": out, "isError": False}}, separators=(",", ":")).encode("utf-8"), ex_h or None)
                 else:
                     self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unsupported"}})
@@ -1800,7 +1870,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     runtime.record_event("rest_matchmake_calls", ext_call=True)
                 else:
                     ex_h = {}
-                self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), body.get("capabilities") or infer_capabilities_from_intent(str(body.get("intent") or "")), bool(body.get("require_instant_zero_auth", True)), str(body.get("max_latency_grade", "C")), top_k=int(body.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(body.get("mode") or "top10_varied"), caller_region=self._caller_region(None, body)), ex_h)
+                self._json(200, runtime.ensure_finalists_hydrated(body.get("capabilities") or infer_capabilities_from_intent(str(body.get("intent") or "")), zero_auth=bool(body.get("require_instant_zero_auth", True)), max_lat=str(body.get("max_latency_grade", "C")), top_k=int(body.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(body.get("mode") or "top10_varied"), caller_region=self._caller_region(None, body)), ex_h)
             elif p == "/v1/directory/crawl":
                 self._json(200, runtime.run_live_scout_sweep(int(body.get("limit", 80))))
             elif p == "/v1/appeals":
@@ -1870,14 +1940,19 @@ def run_self_test() -> int:
         oa = json.loads(urllib.request.urlopen(f"{base}/openapi.json?ui_observer=true", timeout=5).read().decode())
         assert oa["info"]["version"] == SPEC_VERSION and "RadialPassHeader" in oa["components"]["securitySchemes"]
         mcp_well = json.loads(urllib.request.urlopen(f"{base}/.well-known/mcp.json?ui_observer=true", timeout=5).read().decode())
-        assert mcp_well["info"]["version"] == SPEC_VERSION
+        assert mcp_well["version"] == SPEC_VERSION and len(mcp_well["tools"]) == 6
         lt = urllib.request.urlopen(f"{base}/llms.txt?ui_observer=true", timeout=5).read().decode()
         assert f"Spec Rev {SPEC_VERSION}" in lt and "matchmake_agent_crew" in lt and "search_agent_directory" in lt
         ac = json.loads(urllib.request.urlopen(f"{base}/.well-known/agent-card.json", timeout=5).read().decode())
         assert ac["version"] == SPEC_VERSION and len(ac["mcpTools"]) == 6 and "rateLimit" in ac
         home_html = urllib.request.urlopen(f"{base}/", timeout=5).read().decode()
-        assert f"SPEC REV {SPEC_VERSION}" in home_html and "test://v0" in home_html
+        assert f"Spec Rev {SPEC_VERSION}" in home_html and f"SPEC REV {SPEC_VERSION}" in home_html and "test://v0" in home_html
         eu_f = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/flash", data=json.dumps({"capabilities": ["sql"], "caller_region": "EU", "ui_observer": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
+        megahub = build_agent_record_and_dossier("test://megahub", "CatchAll MegaHub", " ".join(CAPABILITY_NAMES), "https://mega.hub.example/mcp", True, 75.0, 40.0, [{"name": "all_in_one", "description": "hub", "inputSchema": {"type": "object"}}], geo_zone="E")
+        rt.pool_by_id["test://megahub"] = megahub
+        sp_f = flash_unsorted_pool(list(rt.pool_by_id.values()), ["sql", "database"], zero_auth=True, max_lat="C")
+        assert sp_f["finalists"][0]["agent_id"] != "test://megahub", "Mega-hub outranked narrow SQL specialist!"
+        del rt.pool_by_id["test://megahub"]
         assert eu_f["caller_region_applied"] == "U" and eu_f["finalists"][0]["agent_id"] == "test://v9"
         cr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/flash", data=json.dumps({"capabilities": ["sql", "finance_data", "math_verify"], "mode": "crew", "ui_observer": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
         assert cr["finalist_count"] == 3 and cr["crew_manifest"]["provider_independence_verified"] is True
@@ -1899,7 +1974,9 @@ def run_self_test() -> int:
             mr = json.loads(r_mcp.read().decode())
         assert len(json.dumps(mr)) < 15000
         f0 = mr["result"]["structuredContent"]["finalists"][0]
-        assert f0["transport"] == "mcp-streamable-http" and f0["auth_mode"] == "none" and len(f0["tools_preview"]) >= 1 and f0["agent_id"] != "test://ekwo-gated"
+        for fn_item in mr["result"]["structuredContent"]["finalists"]:
+            assert len(fn_item["tools_preview"]) >= 1 and fn_item["wired_tool_count"] >= len(fn_item["tools_preview"])
+        assert f0["transport"] == "mcp-streamable-http" and f0["auth_mode"] == "none" and f0["agent_id"] != "test://ekwo-gated"
         tkt, tid = f0["execution_ticket"], f0["agent_id"]
         mr_alias = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "flash_matchmake_agents", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
         assert mr_alias["result"]["structuredContent"]["finalist_count"] >= 1
