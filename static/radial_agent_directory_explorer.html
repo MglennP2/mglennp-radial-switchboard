@@ -108,10 +108,17 @@ input[type="text"], input[type="number"], select, textarea { width:100%; backgro
 .ticket-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:8px; border-top:1px solid var(--bd); flex-wrap:wrap; }
 .empty-honest-box { padding:26px 20px; text-align:center; background:var(--bgw); border:1px dashed var(--bdb); border-radius:var(--rm); color:var(--ts); }
 .table-wrap { overflow-x:auto; border:1px solid var(--bd); border-radius:var(--rm); }
-table { width:100%; border-collapse:collapse; font-size:0.83rem; }
-th, td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--bd); }
-th { background:var(--bgw); font-family:var(--fm); font-size:0.72rem; text-transform:uppercase; color:var(--ts); }
-td.mono { font-family:var(--fm); font-size:0.76rem; }
+table { width:100%; table-layout:fixed; border-collapse:collapse; font-size:0.82rem; }
+th, td { padding:9px 10px; text-align:left; border-bottom:1px solid var(--bd); overflow-wrap:anywhere; vertical-align:top; }
+th { background:var(--bgw); font-family:var(--fm); font-size:0.7rem; text-transform:uppercase; color:var(--ts); white-space:nowrap; overflow-wrap:normal; }
+th:nth-child(1), td:nth-child(1) { width:23%; }
+th:nth-child(2), td:nth-child(2) { width:10%; white-space:nowrap; }
+th:nth-child(3), td:nth-child(3) { width:15%; }
+th:nth-child(4), td:nth-child(4) { width:22%; }
+th:nth-child(5), td:nth-child(5) { width:8%; white-space:nowrap; }
+th:nth-child(6), td:nth-child(6) { width:10%; }
+th:nth-child(7), td:nth-child(7) { width:12%; }
+td.mono { font-family:var(--fm); font-size:0.74rem; }
 .two-col-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
 .json-output-box { background:var(--bgw); border:1px solid var(--bd); border-radius:var(--rm); padding:12px; font-family:var(--fm); font-size:0.76rem; color:#CBD5E1; max-height:260px; overflow:auto; white-space:pre-wrap; margin-top:12px; }
 #toastBanner { position:fixed; bottom:22px; right:22px; z-index:999; background:var(--bge); color:var(--tp); border:1px solid var(--em); border-radius:var(--rm); padding:10px 16px; font-family:var(--fm); font-size:0.8rem; opacity:0; pointer-events:none; transition:opacity 0.18s ease; }
@@ -130,7 +137,7 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 <div class="brand-cluster">
 <span class="brand-dot" aria-hidden="true"></span>
 <span class="brand-title">MGLENNP RADIAL SWITCHBOARD</span>
-<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.4</span>
+<span class="spec-pill" id="specVersionBadge">SPEC REV 3.5.5</span>
 </div>
 <div class="topbar-right">
 <div class="contact-chip">
@@ -183,9 +190,9 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 </section>
 <section class="scoreboard-grid" aria-label="Real-Only Switchboard Telemetry">
 <div class="score-card highlight-uses">
-<div class="score-label"><span>Live Switchboard Uses</span><span style="color:var(--em);">REAL ONLY</span></div>
+<div class="score-label"><span>External Tool Calls</span><span style="color:var(--em);">MCP + REST</span></div>
 <div class="score-value emerald" id="statTotalUses">0</div>
-<div class="score-sub" id="statUseBreakdown">0 MCP &bull; 0 REST &bull; 0 Beacons &bull; 0 Witnessed</div>
+<div class="score-sub" id="statUseBreakdown">0 MCP &bull; 0 REST &bull; 0 Discovery Pulls</div>
 </div>
 <div class="score-card">
 <div class="score-label"><span>Virginia Scout Pool</span><span>GRADE A/B</span></div>
@@ -247,7 +254,14 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 </div>
 <button type="button" class="btn btn-primary" id="copyCodeSnippetBtn">Copy Code Snippet</button>
 </div>
-<div class="code-pre-wrap"><pre class="code-block" id="codeSnippetDisplay"></pre></div>
+<div class="code-pre-wrap"><pre class="code-block" id="codeSnippetDisplay">{
+  "mcpServers": {
+    "radial-switchboard": {
+      "type": "streamable-http",
+      "url": "https://radialswitchboard.com/mcp"
+    }
+  }
+}</pre></div>
 </section>
 <div class="workspace-nav">
 <div class="nav-tabs" role="tablist">
@@ -266,7 +280,7 @@ td.mono { font-family:var(--fm); font-size:0.76rem; }
 <div class="controls-grid">
 <div class="field-group"><label class="field-label" for="flashIntentInput">Task Intent or Capability Query</label><input type="text" id="flashIntentInput" value="postgres sql database finance verification" /></div>
 <div class="field-group"><label class="field-label" for="flashModeSelect">Shortlist Policy</label><select id="flashModeSelect"><option value="top10_varied">Top-10 Anti-Monoculture Varied (v3.2 Default)</option><option value="crew">3-Agent Complementary Crew Triad (Spec 2.0)</option></select></div>
-<div class="field-group"><label class="field-label" for="maxLatencySelect">Max Virginia RTT Grade</label><select id="maxLatencySelect"><option value="A">Grade A (&le; 120 ms)</option><option value="B">Grade B (&le; 300 ms)</option><option value="C" selected>Grade C (&le; 700 ms)</option><option value="E">Grade E (Any Live HTTP)</option></select></div>
+<div class="field-group"><label class="field-label" for="maxLatencySelect">Max Virginia RTT Grade</label><select id="maxLatencySelect"><option value="A">Grade A (&le; 120 ms)</option><option value="B">Grade B (&le; 300 ms)</option><option value="C" selected>Grade C (&le; 700 ms)</option><option value="ANY">ANY (Unrestricted Live RTT)</option></select></div>
 <button type="button" class="btn btn-primary" id="runFlashBtn" style="height:39px;">Run 64-Bit Flash</button>
 </div>
 <div class="cap-chips" id="capChipsContainer"></div>
@@ -424,7 +438,7 @@ const LOCAL_VECTORS = [
 { agent_id:"testbench://edgar-rag", name:"[LOCAL-TESTBENCH] SEC EDGAR Finance RAG", endpoint:"https://sec.rag-bench.example/mcp", mgle_nnp_stamp:"BABB-ZES", mgle_nnp_u64_hex:"0x32122111900000A0", cap_bits:160, warm_latency_ms:112.6, auth_mode:"none", execution_ticket:"v2.1760000100.bench02.c3d4.local_sig" },
 { agent_id:"testbench://z3-audit", name:"[LOCAL-TESTBENCH] Symbolic Math &amp; Security Verifier", endpoint:"https://z3.guard-bench.example/mcp", mgle_nnp_stamp:"AAAA-ZES", mgle_nnp_u64_hex:"0x3111111190004040", cap_bits:16448, warm_latency_ms:61.8, auth_mode:"none", execution_ticket:"v2.1760000100.bench03.e5f6.local_sig" }
 ];
-const state = { activeSnippet:"mcp_json", starterKey:"", selectedCaps:new Set(["sql","database"]), liveDirectoryRows:[], activeWorkAssignment:null };
+const state = { activeSnippet:"mcp_json", starterKey:"", selectedCaps:new Set(["sql","database","finance_data","math_verify"]), liveDirectoryRows:[], activeWorkAssignment:null };
 let toastTimer = null;
 function showToast(msg) {
 const el = document.getElementById("toastBanner");
@@ -454,7 +468,7 @@ if (kind === "python_stdlib") {
 return 'import json, urllib.request\nSWITCHBOARD = "' + PROD_ORIGIN + '"\nPASS_KEY = "' + passVal + '"\nreq = urllib.request.Request(\n    f"{SWITCHBOARD}/v1/flash",\n    data=json.dumps({"intent": "postgres sql finance verification", "mode": "crew"}).encode(),\n    headers={"Content-Type": "application/json", "X-Radial-Pass": PASS_KEY},\n    method="POST",\n)\nres = json.loads(urllib.request.urlopen(req, timeout=10).read().decode())\nprint("Finalists:", len(res["finalists"]), "Flash ms:", res["single_pass_flash_ms"])';
 }
 if (kind === "curl_cli") {
-return 'curl -s -X POST ' + PROD_ORIGIN + '/v1/keys/starter -H "Content-Type: application/json" -d \'{"agent_label":"cli-agent"}\'\n\ncurl -s -X POST ' + PROD_ORIGIN + '/mcp -H "Content-Type: application/json" -H "X-Radial-Pass: ' + passVal + '" \\\n  -d \'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"flash_matchmake_agents","arguments":{"intent":"postgres sql","mode":"top10_varied"}}}\'';
+return 'curl -s -X POST ' + PROD_ORIGIN + '/v1/keys/starter -H "Content-Type: application/json" -d \'{"agent_label":"cli-agent"}\'\n\ncurl -s -X POST ' + PROD_ORIGIN + '/mcp -H "Content-Type: application/json" -H "X-Radial-Pass: ' + passVal + '" \\\n  -d \'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"matchmake_agent_crew","arguments":{"intent":"postgres sql","mode":"top10_varied"}}}\'';
 }
 return 'const res = await fetch("' + PROD_ORIGIN + '/v1/flash", {\n  method: "POST",\n  headers: { "Content-Type": "application/json", "X-Radial-Pass": "' + passVal + '" },\n  body: JSON.stringify({ intent: "postgres sql query", mode: "top10_varied", max_latency_grade: "C" })\n});\nconsole.log(await res.json());';
 }
@@ -470,7 +484,7 @@ wrap.appendChild(b);
 }
 function updateCouplerPreview() {
 const lat = document.getElementById("maxLatencySelect").value || "C";
-const coupler = "**" + lat + "*-Z**";
+const coupler = "**" + (lat === "ANY" ? "*" : lat) + "*-Z**";
 let lower32 = (1 << 28);
 state.selectedCaps.forEach(function(c) { if (Object.prototype.hasOwnProperty.call(CAPABILITY_INDEX, c)) lower32 = (lower32 | (1 << CAPABILITY_INDEX[c])) >>> 0; });
 document.getElementById("couplerReadout").textContent = coupler;
@@ -483,13 +497,13 @@ try {
 const resp = await fetch(apiUrl("/v1/health"));
 if (!resp.ok) throw new Error("HTTP " + resp.status);
 const data = await resp.json();
-badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.4");
-document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.4");
+badge.className = "conn-pill live"; badge.textContent = "LIVE US-EAST4 \u2022 SPEC " + (data.spec_version || "3.5.5");
+document.getElementById("specVersionBadge").textContent = "SPEC REV " + (data.spec_version || "3.5.5");
 const tel = data.telemetry || {};
 const mcp = Number(tel.mcp_jsonrpc_calls || 0), rest = Number(tel.rest_matchmake_calls || 0), bc = Number(tel.ai_beacon_discovery_pulls || 0), rm = Number(tel.room_handshakes_completed || 0);
-const tot = (typeof data.total_external_uses === "number") ? data.total_external_uses : (Number(tel.external_agent_calls || 0) + bc + rm);
-document.getElementById("statTotalUses").textContent = tot.toLocaleString();
-document.getElementById("statUseBreakdown").textContent = mcp + " MCP \u2022 " + rest + " REST \u2022 " + bc + " Beacons \u2022 " + rm + " Witnessed";
+const realCalls = mcp + rest + rm;
+document.getElementById("statTotalUses").textContent = realCalls.toLocaleString();
+document.getElementById("statUseBreakdown").textContent = mcp + " MCP \u2022 " + rest + " REST \u2022 " + bc + " Discovery Pulls";
 document.getElementById("statLiveCallable").textContent = Number(data.live_callable_ab || 0).toLocaleString();
 document.getElementById("statPoolSub").textContent = Number(data.total_unsorted_pool || 0) + " Indexed \u2022 " + Number(tel.scout_sweeps_completed || 0) + " Sweeps \u2022 " + Number(data.synthetic_seed_rows || 0) + " Fake Seeds";
 document.getElementById("statKeySub").textContent = Number(tel.starter_keys_minted || 0) + " Starter Keys Minted \u2022 Zero Signup";
@@ -556,7 +570,7 @@ cb.textContent = "SPEC 2.0 3-AGENT CREW: Single Coverage " + data.crew_manifest.
 const list = Array.isArray(data.finalists) ? data.finalists : [];
 const box = document.getElementById("flashResultsContainer");
 if (!list.length) {
-box.innerHTML = '<div class="empty-honest-box"><strong>0 Live Matches Returned:</strong> No Grade A/B endpoint matched all constraints yet (zero synthetic fallback). Try relaxing Max RTT Grade to E or running a Scout Sweep.</div>';
+box.innerHTML = '<div class="empty-honest-box"><strong>0 Live Matches Returned:</strong> No Grade A/B endpoint matched all constraints yet (zero synthetic fallback). Try relaxing Max RTT Grade to ANY or running a Scout Sweep.</div>';
 return;
 }
 const grid = document.createElement("div"); grid.className = "finalists-grid";
@@ -649,7 +663,15 @@ document.getElementById("submitAppealBtn").addEventListener("click", async funct
 async function postOutcome(aid, tkt, ok, ms) { try { const r = await fetch(apiUrl("/v1/outcome"), { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ agent_id:aid, execution_ticket:tkt, outcome_success:ok, observed_latency_ms:ms }) }); document.getElementById("outcomeOutputBox").textContent = JSON.stringify(Object.assign({ http_status:r.status }, await r.json()), null, 2); syncTelemetry(); } catch (e) { document.getElementById("outcomeOutputBox").textContent = JSON.stringify({ preview:true, sabotage_blocked:String(tkt).includes("forged") }, null, 2); } }
 document.getElementById("submitOutcomeBtn").addEventListener("click", function(){ postOutcome(document.getElementById("outcomeAgentIdInput").value.trim(), document.getElementById("outcomeTicketInput").value.trim(), document.getElementById("outcomeStatusSelect").value === "true", parseFloat(document.getElementById("outcomeLatencyInput").value || "68")); });
 document.getElementById("testForgedTicketBtn").addEventListener("click", function(){ const f = "v2.1700000000.deadbeef1234.0000.forged_sig"; document.getElementById("outcomeTicketInput").value = f; postOutcome(document.getElementById("outcomeAgentIdInput").value.trim() || "mcp://target", f, false, 999); });
-renderCapabilityChips(); updateCouplerPreview(); renderSnippet(); syncTelemetry();
+const INTENT_KW = { sql:["sql","postgres","mysql","sqlite","query"], database:["database","db","postgres","supabase","redis","mongo"], code_exec:["python","code","exec","sandbox"], git_ops:["git","github","repo","pr"], web_fetch:["fetch","scrape","browser","http","url"], search_rag:["search","rag","vector","embed"], math_verify:["verify","verification","audit","proof","math","symbolic"], finance_data:["finance","financial","accounting","ledger","sec","stock","market","tax","vat"], crypto_chain:["crypto","chain","evm","solidity","web3","defi"], payments_x402:["x402","usdc","payment","invoice"], file_parse:["pdf","csv","excel","document","parse"], security_audit:["security","vuln","cve","ssrf"], cloud_devops:["docker","cloud","k8s","aws","gcp","deploy"] };
+function syncCapsFromIntent() {
+  const txt = (document.getElementById("flashIntentInput").value || "").toLowerCase();
+  const next = new Set();
+  Object.keys(INTENT_KW).forEach(function(cap){ if (INTENT_KW[cap].some(function(w){ return txt.includes(w); })) next.add(cap); });
+  if (next.size > 0) { state.selectedCaps = next; renderCapabilityChips(); updateCouplerPreview(); }
+}
+document.getElementById("flashIntentInput").addEventListener("input", syncCapsFromIntent);
+syncCapsFromIntent(); renderCapabilityChips(); updateCouplerPreview(); renderSnippet(); syncTelemetry();
 })();
 </script>
 </body>

@@ -7,7 +7,7 @@ import io, ipaddress, json, os, random, re, secrets, socketserver, ssl, threadin
 import urllib.error, urllib.parse, urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-SPEC_VERSION = "3.5.4"
+SPEC_VERSION = "3.5.5"
 SCHEMA_NIBBLE = 0x3
 CONTACT_EMAIL = "support@radialswitchboard.com"
 PUBLIC_GITHUB_REPO = "https://github.com/MglennP2/mglennp-radial-switchboard"
@@ -323,7 +323,9 @@ class MgleNnp64Codec:
         req = READINESS_BITS["poison_scan_clean"] if poison_clean else 0
         if zero_auth: req |= READINESS_BITS["zero_auth_instant"]
         for c in caps: req |= CAPABILITY_BITS.get(c.strip().lower(), 0)
-        return req, 0, f"**{max_lat[:1].upper()}*-{'Z' if zero_hop else '*'}**"
+        ml_s = (max_lat or "C").strip().upper()
+        lat_ch = "*" if ml_s in ("ANY", "*") else ml_s[:1]
+        return req, 0, f"**{lat_ch}*-{'Z' if zero_hop else '*'}**"
 
 def select_varied_top_k(scored: Sequence[Tuple[float, Dict[str, Any]]], top_k: int = DEFAULT_FLASH_TOP_K) -> Tuple[List[Tuple[Dict[str, Any], str, str]], Dict[str, Any]]:
     lim = max(1, min(MAX_FLASH_TOP_K, int(top_k or DEFAULT_FLASH_TOP_K)))
@@ -376,16 +378,19 @@ def assemble_complementary_crew(scored: Sequence[Tuple[float, Dict[str, Any]]], 
 
 def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zero_auth: bool = False, max_lat: str = "C", zero_hop: bool = True, top_k: int = DEFAULT_FLASH_TOP_K, mode: str = "top10_varied", caller_region: str = "GLOBAL") -> Dict[str, Any]:
     t0 = time.perf_counter()
-    req_bits, _, coupler = MgleNnp64Codec.build_query_masks(caps, zero_auth, True, max_lat, zero_hop)
-    max_nib = GRADE_TO_NIBBLE.get(max_lat[:1].upper(), 3)
+    ml_norm = (max_lat or "C").strip().upper()
+    req_bits, _, coupler = MgleNnp64Codec.build_query_masks(caps, zero_auth, True, ml_norm, zero_hop)
+    max_nib = 5 if ml_norm in ("ANY", "*", "E") else GRADE_TO_NIBBLE.get(ml_norm[:1], 3)
+    max_guar_nib = 1 if zero_auth else 3
     c_reg = normalize_caller_region(caller_region)
     exact, partial, viable = [], [], []
     for rec in pool:
         u64 = int(rec.get("mgle_nnp_64bit") or 0)
         u32, l32 = (u64 >> 32) & 0xFFFFFFFF, u64 & 0xFFFFFFFF
+        if zero_auth and (rec.get("auth_mode") != "none" or int(rec.get("wired_tool_count") or 0) <= 0 or str(rec.get("tool_schema_hash_16") or "0000000000000000") == "0000000000000000"): continue
         rec_zone = NIBBLE_TO_NEIGHBOR.get((u32 >> 4) & 0xF, str(rec.get("geo_zone") or "E"))
         eff_max_nib = max(max_nib, 3) if (c_reg in ("U", "P", "W") and rec_zone in (c_reg, "G")) else max_nib
-        if ((u32 >> 20) & 0xF) > 2 or ((u32 >> 16) & 0xF) > eff_max_nib or (zero_hop and ((u32 >> 8) & 0xF) != 1): continue
+        if ((u32 >> 20) & 0xF) > max_guar_nib or ((u32 >> 16) & 0xF) > eff_max_nib or (zero_hop and ((u32 >> 8) & 0xF) != 1): continue
         wt = float(rec.get("synaptic_weight") or 0.80)
         geo_boost = 0.08 if (c_reg != "GLOBAL" and rec_zone == c_reg) else (0.05 if rec_zone == "G" else 0.0)
         bs = round(wt + geo_boost + 0.05 * (6 - ((u32 >> 24) & 0xF)) + 0.02 * (6 - ((u32 >> 16) & 0xF)), 4)
@@ -405,8 +410,61 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
     else:
         div, var_s = [], {"requested_top_k": top_k, "returned_count": 0, "unique_vendor_domains": 0}; m_mode = "NO_LIVE_RESONANCE"
     ms, now_u = round((time.perf_counter() - t0) * 1000.0, 4), int(time.time())
-    fins = [{"rank": i, "agent_id": r.get("agent_id"), "name": r.get("name"), "endpoint": r.get("endpoint"), "vendor_domain": vd, "geo_zone": NIBBLE_TO_NEIGHBOR.get(((int(r.get("mgle_nnp_64bit") or 0) >> 32) >> 4) & 0xF, "E"), "variability_role": rl, "crew_role": rl if crew_m else None, "mgle_nnp_code": r.get("mgle_nnp_stamp"), "mgle_nnp_stamp": r.get("mgle_nnp_stamp"), "mgle_nnp_u64_hex": f"0x{int(r.get('mgle_nnp_64bit') or 0):016X}", "domain_mask": r.get("domain_mask", 0), "warm_latency_ms": r.get("avg_latency_ms"), "auth_mode": r.get("auth_mode", "none"), "tool_schema_hash_16": r.get("tool_schema_hash_16"), "synaptic_weight": r.get("synaptic_weight"), "execution_ticket": issue_execution_ticket(str(r.get("agent_id") or ""), now_u), "pre_handshake_dossier": r.get("dossier_json") or {}} for i, (r, rl, vd) in enumerate(div, 1)]
-    out = {"spec_version": SPEC_VERSION, "caller_region_applied": c_reg, "pool_scanned_unsorted": len(pool), "single_pass_flash_ms": ms, "match_mode": m_mode, "coupler_applied": coupler, "required_lower32_hex": f"0x{req_bits:08X}", "variability_summary": var_s, "finalist_count": len(fins), "finalists": fins, "matches": fins, "top_match": fins[0] if fins else {}}
+    fins = []
+    for i, (r, rl, vd) in enumerate(div, 1):
+        ep_s = str(r.get("endpoint") or "")
+        aid_s = str(r.get("agent_id") or "")
+        low_e = ep_s.lower()
+        if not low_e.startswith(("http://", "https://")) or any(h in low_e for h in ("github.com/", "gitlab.com/", "npmjs.com/", "pypi.org/")):
+            tr_proto = "stdio-package-repo"
+        elif aid_s.startswith("a2a://") or low_e.endswith(("agent-card.json", "agent.json")):
+            tr_proto = "a2a-http-json"
+        elif low_e.endswith("/sse"):
+            tr_proto = "mcp-sse"
+        else:
+            tr_proto = "mcp-streamable-http"
+        dos_raw = r.get("dossier_json") if isinstance(r.get("dossier_json"), dict) else {}
+        v_tools = dos_raw.get("verified_tools") if isinstance(dos_raw.get("verified_tools"), list) else []
+        t_prev = [{"tool": t.get("tool"), "required": t.get("required", []), "inputs": t.get("inputs", {})} for t in v_tools[:5] if isinstance(t, dict) and t.get("tool")]
+        fins.append({
+            "rank": i,
+            "agent_id": aid_s,
+            "name": r.get("name"),
+            "endpoint": ep_s,
+            "transport": tr_proto,
+            "protocol_version": "2025-06-18",
+            "vendor_domain": vd,
+            "geo_zone": NIBBLE_TO_NEIGHBOR.get(((int(r.get("mgle_nnp_64bit") or 0) >> 32) >> 4) & 0xF, "E"),
+            "variability_role": rl,
+            "crew_role": rl if crew_m else None,
+            "mgle_nnp_stamp": r.get("mgle_nnp_stamp"),
+            "mgle_nnp_u64_hex": f"0x{int(r.get('mgle_nnp_64bit') or 0):016X}",
+            "guarantee_grade": r.get("guarantee_grade"),
+            "latency_grade": r.get("latency_grade"),
+            "warm_latency_ms": r.get("avg_latency_ms"),
+            "auth_mode": r.get("auth_mode", "none"),
+            "wired_tool_count": int(r.get("wired_tool_count") or len(t_prev)),
+            "tool_schema_hash_16": r.get("tool_schema_hash_16"),
+            "tools_preview": t_prev,
+            "synaptic_weight": r.get("synaptic_weight"),
+            "last_audited_at": r.get("last_audited_at"),
+            "execution_ticket": issue_execution_ticket(aid_s, now_u),
+        })
+    out = {
+        "spec_version": SPEC_VERSION,
+        "caller_region_applied": c_reg,
+        "pool_scanned_unsorted": len(pool),
+        "scanned_pool_count": len(pool),
+        "single_pass_flash_ms": ms,
+        "mode": (mode or "top10_varied").strip().lower(),
+        "match_mode": m_mode,
+        "coupler_applied": coupler,
+        "required_lower32_hex": f"0x{req_bits:08X}",
+        "variability_summary": var_s,
+        "finalist_count": len(fins),
+        "finalists": fins,
+        "top_match": fins[0] if fins else {},
+    }
     if crew_m is not None: out["crew_manifest"] = crew_m
     return out
 
@@ -444,13 +502,22 @@ def build_agent_record_and_dossier(aid: str, name: str, desc: str, ep: str, aliv
     elif is_repo: guar_g, merit_g, node_h, n_wt, st = "D", "C", "Z", min(p_wt, 0.50), "UNHOSTED_REPO_GRADE_D"
     elif not alive: guar_g, merit_g, node_h, n_wt, st = "E", "D", "Z", max(0.10, round(p_wt - 0.20, 4)), "QUARANTINED_OFFLINE_GRADE_E"
     else:
-        guar_g = "A" if (c_tools or pv.get("guarantee_grade") == "A") else "B"
-        merit_g, node_h, n_wt = ("B" if wins >= 5 else "C"), "Z", min(0.99, round(p_wt + (0.04 if c_tools else 0.01), 4))
-        st = f"VERIFIED_LIVE_GRADE_{guar_g}"
+        has_verified_tools = len(c_tools) > 0 and h16 != "0000000000000000"
+        if auth_m == "none" and not has_verified_tools:
+            auth_m = "auth_or_session_required"
+        if auth_m == "none" and has_verified_tools:
+            guar_g = "A"
+            merit_g, node_h, n_wt = ("B" if wins >= 5 else "C"), "Z", min(0.99, round(p_wt + 0.04, 4))
+            st = "VERIFIED_LIVE_GRADE_A"
+        else:
+            guar_g = "B" if x402_ok else "C"
+            merit_g, node_h, n_wt = "C", "Z", min(0.78, round(p_wt, 4))
+            st = "LIVE_X402_PAYABLE_GRADE_B" if x402_ok else "LIVE_AUTH_GATED_GRADE_C"
     r_mask = (READINESS_BITS["poison_scan_clean"] if p_ok else 0) | READINESS_BITS["schema_drift_stable"]
     if wins >= 10 and (wins / max(1, wins + fails)) > 0.80: r_mask |= READINESS_BITS["seasoned_tenure"]
     if x402_ok: r_mask |= READINESS_BITS["x402_native_payable"]
-    if auth_m == "none" and not is_repo and alive: r_mask |= READINESS_BITS["zero_auth_instant"]
+    if auth_m == "none" and len(c_tools) > 0 and h16 != "0000000000000000" and not is_repo and alive:
+        r_mask |= READINESS_BITS["zero_auth_instant"]
     stamp, u64, u64_hex = MgleNnp64Codec.pack(merit_g, guar_g, lat_g, "B" if x402_ok else "A", node_h, zone, "S" if lat_g in ("A", "B") else "D", r_mask, c_mask)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     dos = {"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "geo_zone": zone, "mgle_nnp_code": stamp, "mgle_nnp_u64_hex": u64_hex, "decoded_switches": MgleNnp64Codec.unpack(u64), "verified_tools": c_tools[:20], "inspected_at_utc": now_iso}
@@ -474,7 +541,7 @@ def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 3.5) -> 
         if e.headers: resp_h = dict(e.headers.items())
         if e.code in (401, 403): alive, auth_m = True, "bearer_or_oauth_required"
         elif e.code == 402: alive, auth_m, x402_ok = True, "x402_micropayment", True
-        elif e.code in (400, 405, 406): alive = True
+        elif e.code in (400, 405, 406): alive, auth_m = True, "non_mcp_or_custom_handshake"
     except Exception:
         alive = False
     if alive and auth_m == "none":
@@ -488,10 +555,17 @@ def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 3.5) -> 
                 if not ps.startswith("{"):
                     for ln in ps.splitlines():
                         if ln.strip().startswith("data:") and "{" in ln: ps = ln.split("data:", 1)[1].strip(); break
-                ro = (json.loads(ps) or {}).get("result")
+                parsed_l = json.loads(ps) or {}
+                if isinstance(parsed_l.get("error"), dict):
+                    auth_m = "rpc_error_or_auth_gated"
+                ro = parsed_l.get("result")
                 if isinstance(ro, dict) and isinstance(ro.get("tools"), list): tools = ro["tools"]
+        except urllib.error.HTTPError as e2:
+            if e2.code in (401, 403): auth_m = "bearer_or_oauth_required"
+            elif e2.code == 402: auth_m, x402_ok = "x402_micropayment", True
+            else: auth_m = f"tools_list_http_{e2.code}"
         except Exception:
-            pass
+            auth_m = "tools_list_unreachable"
     zone = infer_endpoint_geo_zone(ep, resp_h, warm if warm is not None else cold)
     return build_agent_record_and_dossier(aid, nm or aid, ds, ep, alive, cold, warm, tools, auth_m, None, x402_ok, row, zone)
 
@@ -740,31 +814,50 @@ class StandaloneSwitchboardRuntime:
                     raw_lat = row.get("avg_latency_ms")
                     lat_val = float(raw_lat) if (raw_lat is not None and int(raw_lat) > 0) else (85.0 if guar_c in ("A", "B") else None)
                     zone = str(row.get("neighborhood") or infer_endpoint_geo_zone(ep, None, lat_val))[:1].upper()
+                    raw_desc_full = str(row.get("description") or "")
+                    clean_desc, hyd_tools = raw_desc_full, []
+                    if " /*RADIAL_TOOLS:" in raw_desc_full and raw_desc_full.endswith("*/"):
+                        clean_desc, t_blob = raw_desc_full.split(" /*RADIAL_TOOLS:", 1)
+                        try: hyd_tools = json.loads(t_blob[:-2])
+                        except Exception: hyd_tools = []
+                    fp16 = str(row.get("fingerprint_hex") or "0000000000000000").replace("0x", "")[-16:].rjust(16, "0")
+                    has_real_schema = (fp16 != "0000000000000000")
                     if ((raw_u64 >> 60) & 0x3) == SCHEMA_NIBBLE and raw_u64 > 0:
                         c_mask = raw_u64 & 0x00FFFFFF
+                        eff_zone = NIBBLE_TO_NEIGHBOR.get(((raw_u64 >> 32) >> 4) & 0xF, zone)
+                        merit_c, lat_c = (code[0:1] or "C"), (code[2:3] or "B")
+                        if guar_c in ("A", "B") and has_real_schema:
+                            eff_guar, eff_auth, eff_tools, eff_st = "A", "none", 1, "VERIFIED_LIVE_GRADE_A"
+                            eff_u64, eff_code = raw_u64, f"{merit_c}A{lat_c}{code[3:]}" if len(code) >= 7 else code
+                        elif guar_c in ("A", "B") and not has_real_schema:
+                            eff_guar, eff_auth, eff_tools, eff_st = "C", "auth_or_session_required", 0, "LIVE_AUTH_GATED_GRADE_C"
+                            r_clean = (raw_u64 & 0xFF000000) & (~READINESS_BITS["zero_auth_instant"])
+                            eff_code, eff_u64, _ = MgleNnp64Codec.pack("C", "C", lat_c, "A", "Z", eff_zone, "S" if lat_c in ("A", "B") else "D", r_clean, c_mask)
+                        else:
+                            eff_guar, eff_auth, eff_tools, eff_st = guar_c, "local_stdio_code", 0, f"INDEXED_GRADE_{guar_c}"
+                            eff_u64, eff_code = raw_u64, code
                         rec = {
-                            "agent_id": aid, "name": str(row.get("name") or aid), "description": str(row.get("description") or "")[:400],
-                            "endpoint": ep, "geo_zone": NIBBLE_TO_NEIGHBOR.get(((raw_u64 >> 32) >> 4) & 0xF, zone),
-                            "merit_grade": code[0:1] or "C", "guarantee_grade": guar_c,
-                            "latency_grade": code[2:3] or "B", "mgle_nnp_stamp": code, "mgle_nnp_64bit": raw_u64,
-                            "mgle_nnp_u64_hex": f"0x{raw_u64:016X}", "domain_mask": c_mask, "avg_latency_ms": lat_val,
-                            "synaptic_weight": float(row.get("synaptic_weight") or 0.80), "wired_tool_count": 1 if guar_c == "A" else 0,
-                            "tool_schema_hash_16": str(row.get("fingerprint_hex") or "0000000000000000")[-16:].rjust(16, "0"),
-                            "auth_mode": "none" if guar_c in ("A", "B") else "local_stdio_code", "poison_scan_clean": guar_c != "F",
+                            "agent_id": aid, "name": str(row.get("name") or aid), "description": clean_desc[:400],
+                            "endpoint": ep, "geo_zone": eff_zone,
+                            "merit_grade": "C" if eff_guar == "C" else merit_c, "guarantee_grade": eff_guar,
+                            "latency_grade": lat_c, "mgle_nnp_stamp": eff_code, "mgle_nnp_64bit": eff_u64,
+                            "mgle_nnp_u64_hex": f"0x{eff_u64:016X}", "domain_mask": c_mask, "avg_latency_ms": lat_val,
+                            "synaptic_weight": min(0.78, float(row.get("synaptic_weight") or 0.75)) if eff_guar == "C" else float(row.get("synaptic_weight") or 0.80),
+                            "wired_tool_count": max(eff_tools, len(hyd_tools)),
+                            "tool_schema_hash_16": fp16,
+                            "auth_mode": eff_auth, "poison_scan_clean": guar_c != "F",
                             "encounter_count": max(1, int(row.get("handshakes_completed") or 0)),
                             "room_completions": int(row.get("handshakes_completed") or 0),
                             "room_failures": int(row.get("handshakes_failed") or 0),
-                            "dossier_json": {"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "geo_zone": zone, "mgle_nnp_code": code, "mgle_nnp_u64_hex": f"0x{raw_u64:016X}"},
-                            "audit_status": f"VERIFIED_LIVE_GRADE_{guar_c}" if guar_c in ("A", "B") else f"INDEXED_GRADE_{guar_c}",
+                            "dossier_json": {"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "geo_zone": eff_zone, "mgle_nnp_code": eff_code, "mgle_nnp_u64_hex": f"0x{eff_u64:016X}", "verified_tools": hyd_tools},
+                            "audit_status": eff_st,
                             "last_audited_at": str(row.get("updated_at") or ""),
                         }
                         self.pool_by_id[aid] = rec
                     else:
                         prev_shim = {"synaptic_weight": row.get("synaptic_weight") or 0.80, "guarantee_grade": guar_c, "room_completions": row.get("handshakes_completed") or 0, "room_failures": row.get("handshakes_failed") or 0}
-                        rec = build_agent_record_and_dossier(aid, str(row.get("name") or aid), str(row.get("description") or ""), ep, guar_c in ("A", "B"), lat_val, lat_val, [], prev_record=prev_shim, geo_zone=zone)
-                        if guar_c in ("A", "B"):
-                            rec["guarantee_grade"], rec["audit_status"] = guar_c, f"VERIFIED_LIVE_GRADE_{guar_c}"
-                        elif guar_c == "F":
+                        rec = build_agent_record_and_dossier(aid, str(row.get("name") or aid), str(row.get("description") or ""), ep, guar_c in ("A", "B"), lat_val, lat_val, [{"name": "verified_schema", "description": str(row.get("description") or ""), "inputSchema": {"type": "object"}}] if has_real_schema else [], prev_record=prev_shim, geo_zone=zone)
+                        if guar_c == "F":
                             rec["guarantee_grade"], rec["audit_status"] = "F", "SLASHED_POISON_GRADE_F"
                         self.pool_by_id[aid] = rec
                 if len(batch) < batch_sz: break
@@ -790,7 +883,7 @@ class StandaloneSwitchboardRuntime:
                 "name": str(r.get("name") or aid),
                 "protocol": "A2A" if aid.startswith("a2a://") else "MCP",
                 "endpoint": str(r.get("endpoint") or ""),
-                "description": str(r.get("description") or "")[:400],
+                "description": (str(r.get("description") or "").split(" /*RADIAL_TOOLS:")[0][:240] + (" /*RADIAL_TOOLS:" + json.dumps([{"tool": t.get("tool"), "required": (t.get("required") or [])[:5], "inputs": dict(list((t.get("inputs") or {}).items())[:5])} for t in ((r.get("dossier_json") or {}).get("verified_tools") or [])[:4]], separators=(",", ":")) + "*/" if ((r.get("dossier_json") or {}).get("verified_tools")) else ""))[:400],
                 "radial_bitmask": int(r.get("domain_mask") or (u64 & 0x00FFFFFF)),
                 "fingerprint_hex": str(r.get("tool_schema_hash_16") or "0000000000000000")[:16],
                 "mglennp_code": stamp,
@@ -968,8 +1061,8 @@ MCP_SERVER_TOOLS = [
                 },
                 "max_latency_grade": {
                     "type": "string",
-                    "enum": ["A", "B", "C", "D", "E"],
-                    "description": "Worst acceptable Virginia Scout RTT grade ('A' <=150ms, 'B' <=350ms, 'C' <=700ms, 'D' offline repo, 'E' any)."
+                    "enum": ["A", "B", "C", "D", "ANY"],
+                    "description": "Worst acceptable Virginia Scout RTT grade ('A' <=120ms, 'B' <=300ms, 'C' <=700ms default, 'D' <=1500ms, 'ANY' unrestricted live RTT)."
                 },
                 "top_k": {
                     "type": "integer",
@@ -1150,13 +1243,14 @@ MCP_SERVER_TOOLS = [
 
 def build_llms_txt(treasury_address: str) -> str:
     bt = chr(96) * 3
+    tool_names = ", ".join(t["name"] for t in MCP_SERVER_TOOLS)
     caps = ", ".join(CAPABILITY_NAMES)
     req_ex = json.dumps({
-        "intent": "postgres sql database schema verification",
-        "capabilities": ["sql", "database", "schema_transform"],
+        "intent": "postgres sql database finance verification",
+        "capabilities": ["sql", "database", "finance_data", "math_verify"],
         "mode": "top10_varied",
         "caller_region": "GLOBAL",
-        "require_instant_zero_auth": False,
+        "require_instant_zero_auth": True,
         "max_latency_grade": "C",
         "top_k": 10,
     }, indent=2)
@@ -1167,10 +1261,11 @@ def build_llms_txt(treasury_address: str) -> str:
         "",
         "## 1. Streamable HTTP MCP (Recommended for MCP Clients & Autonomous Hosts)",
         "- Endpoint: POST https://radialswitchboard.com/mcp",
-        "- Protocol: MCP Streamable HTTP (2026-07-28 / 2025-06-18)",
+        "- Protocol: MCP Streamable HTTP (2026-07-28 & 2025-06-18)",
         "- Official MCP Registry ID: com.radialswitchboard/matchmaker",
-        "- Tools via tools/list: matchmake_agent_crew (alias: flash_matchmake_agents), search_agent_directory, get_agent_dossier, get_switchboard_telemetry, register_agent_endpoint, report_execution_outcome",
-        f"- Free tier: {FREE_DAILY_STARTER_CALLS} calls/day automatic, or POST /v1/keys/starter for X-Radial-Pass.",
+        f"- Live MCP Tools (6): {tool_names} (legacy alias supported: flash_matchmake_agents)",
+        "- Zero-Shot Handoff Guarantee: matchmake_agent_crew defaults to require_instant_zero_auth=true and max_latency_grade='C' (<=700ms), returning only endpoints with verified non-zero tools/list schemas plus transport, protocol_version, tools_preview, and single-use execution_ticket.",
+        f"- Quota & Headers: {FREE_DAILY_STARTER_CALLS} matchmaking calls/UTC-day automatic per IP (initialize, tools/list, search_agent_directory, get_agent_dossier, get_switchboard_telemetry, and report_execution_outcome are UNMETERED). Optional header X-Radial-Pass on POST /mcp or POST /v1/flash; responses return X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset.",
         "",
         "## 2. Direct REST Matchmaking (POST https://radialswitchboard.com/v1/flash)",
         f"{bt}json",
@@ -1178,11 +1273,12 @@ def build_llms_txt(treasury_address: str) -> str:
         bt,
         "- Set mode='crew' for a 3-agent provider-independent triad (Compute + Domain + Verifier).",
         f"- Valid capabilities (Bits 0..23): {caps}",
+        "- Valid max_latency_grade: A (<=120ms), B (<=300ms), C (<=700ms default), D (<=1500ms), ANY (unrestricted live RTT). Note: Grade E in pool health denotes quarantined offline endpoints.",
         "- Valid caller_region: E (US-East), W (US-West), U (Europe), P (APAC), GLOBAL.",
-        "- Redeem single-use execution_ticket via POST /v1/outcome after worker execution.",
+        "- Redeem single-use execution_ticket via POST /v1/outcome (or MCP report_execution_outcome) after worker execution.",
         "",
         "## 3. Autonomous 402 Access Lanes (Zero-Human-Intervention)",
-        f"1. Free Daily Starter Pass ({FREE_DAILY_STARTER_CALLS}/day): POST https://radialswitchboard.com/v1/keys/starter",
+        f"1. Free Daily Starter Pass ({FREE_DAILY_STARTER_CALLS}/UTC-day): POST https://radialswitchboard.com/v1/keys/starter -> pass X-Radial-Pass header.",
         f"2. $0 Canary Scout Compute Barter ({WORK_PASS_CREDITS} handshakes): POST /v1/work/claim -> POST /v1/work/submit",
         "   Worker script: GET https://radialswitchboard.com/radial_apprentice_worker.py",
         f"3. Base Mainnet USDC x402 V2 ({CASH_PASS_PRICE_USDC} USDC = {CASH_PASS_CREDITS} handshakes):",
@@ -1198,12 +1294,17 @@ def build_llms_txt(treasury_address: str) -> str:
     return "\n".join(lines) + "\n"
 
 def build_openapi_spec(treasury_address: str) -> Dict[str, Any]:
+    rl_hdrs = {
+        "X-RateLimit-Limit": {"schema": {"type": "integer"}, "description": "Matchmaking quota ceiling for active pass or daily IP tier."},
+        "X-RateLimit-Remaining": {"schema": {"type": "integer"}, "description": "Remaining matchmaking handshakes before HTTP 402 challenge."},
+        "X-RateLimit-Reset": {"schema": {"type": "integer"}, "description": "UTC Unix timestamp when free daily allowance resets."},
+    }
     return {
         "openapi": "3.1.0",
         "info": {
             "title": "MglennP Radial Switchboard API",
             "version": SPEC_VERSION,
-            "summary": "64-bit MGLE-NNP AI-to-AI MCP & A2A agent matchmaker and runtime auditor.",
+            "summary": "64-bit MGLE-NNP AI-to-AI MCP & A2A zero-shot agent matchmaker and runtime auditor.",
             "contact": {"name": "MglennP", "email": CONTACT_EMAIL, "url": "https://radialswitchboard.com"},
             "license": {"name": "MIT", "url": f"{PUBLIC_GITHUB_REPO}/blob/main/LICENSE"},
         },
@@ -1211,44 +1312,111 @@ def build_openapi_spec(treasury_address: str) -> Dict[str, Any]:
         "x-mcp-streamable-http": "https://radialswitchboard.com/mcp",
         "x-a2a-agent-card": "https://radialswitchboard.com/.well-known/agent-card.json",
         "x-usdc-treasury-base": treasury_address,
+        "components": {
+            "securitySchemes": {
+                "RadialPassHeader": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "X-Radial-Pass",
+                    "description": f"Optional stateless HMAC pass token (rs3.*). Unauthenticated callers automatically receive {FREE_DAILY_STARTER_CALLS} matchmaking calls/UTC-day per IP; mint explicitly via POST /v1/keys/starter, POST /v1/work/submit, or Base USDC x402.",
+                }
+            },
+            "schemas": {
+                "FinalistHandoffManifest": {
+                    "type": "object",
+                    "required": ["rank", "agent_id", "endpoint", "transport", "protocol_version", "auth_mode", "wired_tool_count", "tools_preview", "execution_ticket"],
+                    "properties": {
+                        "rank": {"type": "integer"},
+                        "agent_id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "endpoint": {"type": "string", "format": "uri"},
+                        "transport": {"type": "string", "enum": ["mcp-streamable-http", "mcp-sse", "a2a-http-json", "stdio-package-repo"]},
+                        "protocol_version": {"type": "string"},
+                        "mgle_nnp_stamp": {"type": "string"},
+                        "mgle_nnp_u64_hex": {"type": "string"},
+                        "warm_latency_ms": {"type": ["number", "null"]},
+                        "auth_mode": {"type": "string"},
+                        "wired_tool_count": {"type": "integer"},
+                        "tool_schema_hash_16": {"type": "string"},
+                        "tools_preview": {"type": "array", "items": {"type": "object", "properties": {"tool": {"type": "string"}, "required": {"type": "array", "items": {"type": "string"}}, "inputs": {"type": "object"}}}},
+                        "last_audited_at": {"type": ["string", "null"]},
+                        "execution_ticket": {"type": "string"},
+                    },
+                },
+                "FlashMatchmakeResponse": {
+                    "type": "object",
+                    "required": ["spec_version", "match_mode", "finalist_count", "finalists"],
+                    "properties": {
+                        "spec_version": {"type": "string"},
+                        "pool_scanned_unsorted": {"type": "integer"},
+                        "single_pass_flash_ms": {"type": "number"},
+                        "match_mode": {"type": "string"},
+                        "coupler_applied": {"type": "string"},
+                        "required_lower32_hex": {"type": "string"},
+                        "finalist_count": {"type": "integer"},
+                        "finalists": {"type": "array", "items": {"$ref": "#/components/schemas/FinalistHandoffManifest"}},
+                    },
+                },
+                "Gate402Challenge": {
+                    "type": "object",
+                    "required": ["http_status", "error", "lane_a_x402_usdc", "lane_b_compute_scout_duty"],
+                    "properties": {
+                        "http_status": {"type": "integer", "const": 402},
+                        "error": {"type": "string"},
+                        "lane_a_x402_usdc": {"type": "object", "properties": {"network": {"type": "string"}, "asset_contract": {"type": "string"}, "amount_usdc": {"type": "number"}, "pay_to_address": {"type": "string"}, "grants_handshakes": {"type": "integer"}}},
+                        "lane_b_compute_scout_duty": {"type": "object", "properties": {"claim_endpoint": {"type": "string"}, "submit_endpoint": {"type": "string"}, "grants_handshakes": {"type": "integer"}}},
+                    },
+                },
+            },
+        },
         "paths": {
             "/mcp": {
                 "post": {
                     "operationId": "mcpJsonRpc",
-                    "summary": "Streamable HTTP MCP JSON-RPC 2.0 endpoint (initialize, tools/list, tools/call)",
-                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["jsonrpc", "method"], "properties": {"jsonrpc": {"type": "string"}, "id": {"type": ["integer", "string"]}, "method": {"type": "string"}, "params": {"type": "object"}}}}}},
-                    "responses": {"200": {"description": "JSON-RPC 2.0 response"}, "402": {"description": "x402 or Canary Scout challenge"}},
+                    "summary": "Streamable HTTP MCP JSON-RPC 2.0 endpoint (initialize, tools/list, tools/call across 6 tools)",
+                    "security": [{}, {"RadialPassHeader": []}],
+                    "parameters": [{"name": "X-Radial-Pass", "in": "header", "required": False, "schema": {"type": "string"}}],
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["jsonrpc", "method"], "properties": {"jsonrpc": {"type": "string", "const": "2.0"}, "id": {"type": ["integer", "string"]}, "method": {"type": "string", "enum": ["initialize", "notifications/initialized", "ping", "tools/list", "tools/call"]}, "params": {"type": "object"}}}}}},
+                    "responses": {
+                        "200": {"description": "JSON-RPC 2.0 response with compact text + structuredContent", "headers": rl_hdrs, "content": {"application/json": {"schema": {"type": "object", "properties": {"jsonrpc": {"type": "string"}, "id": {"type": ["integer", "string"]}, "result": {"type": "object"}}}}}},
+                        "402": {"description": "x402 USDC or $0 Canary Scout challenge when daily free quota is exhausted", "headers": rl_hdrs, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Gate402Challenge"}}}},
+                    },
                 }
             },
             "/v1/flash": {
                 "post": {
                     "operationId": "flashMatchmakeAgents",
-                    "summary": "Sub-ms 64-bit MGLE-NNP matchmaker (Top-10 varied or 3-agent crew)",
+                    "summary": "Sub-second 64-bit MGLE-NNP zero-shot matchmaker (Top-10 varied or 3-agent crew)",
+                    "security": [{}, {"RadialPassHeader": []}],
                     "parameters": [{"name": "X-Radial-Pass", "in": "header", "required": False, "schema": {"type": "string"}}],
-                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "properties": {"intent": {"type": "string"}, "capabilities": {"type": "array", "items": {"type": "string", "enum": list(CAPABILITY_NAMES)}}, "mode": {"type": "string", "enum": ["top10_varied", "crew"]}, "caller_region": {"type": "string", "enum": ["GLOBAL", "E", "W", "U", "P"]}, "require_instant_zero_auth": {"type": "boolean"}, "max_latency_grade": {"type": "string", "enum": ["A", "B", "C", "D", "E"]}, "top_k": {"type": "integer", "minimum": 1, "maximum": MAX_FLASH_TOP_K}}}}}},
-                    "responses": {"200": {"description": "Ranked finalists with 64-bit stamps and execution tickets"}, "402": {"description": "Payment or Canary Scout work required"}},
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "properties": {"intent": {"type": "string", "description": "Natural-language task description (required if capabilities omitted)."}, "capabilities": {"type": "array", "items": {"type": "string", "enum": list(CAPABILITY_NAMES)}}, "mode": {"type": "string", "enum": ["top10_varied", "crew"], "default": "top10_varied"}, "caller_region": {"type": "string", "enum": ["GLOBAL", "E", "W", "U", "P"], "default": "GLOBAL"}, "require_instant_zero_auth": {"type": "boolean", "default": True}, "max_latency_grade": {"type": "string", "enum": ["A", "B", "C", "D", "ANY"], "default": "C"}, "top_k": {"type": "integer", "minimum": 1, "maximum": MAX_FLASH_TOP_K, "default": DEFAULT_FLASH_TOP_K}}}}}},
+                    "responses": {
+                        "200": {"description": "Ranked zero-shot finalists with handoff manifests and execution tickets", "headers": rl_hdrs, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/FlashMatchmakeResponse"}}}},
+                        "402": {"description": "Payment or Canary Scout work required", "headers": rl_hdrs, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Gate402Challenge"}}}},
+                    },
                 }
             },
             "/v1/keys/starter": {
                 "post": {
                     "operationId": "mintDailyStarterKey",
-                    "summary": "Mint stateless free daily X-Radial-Pass (15 handshakes/day)",
-                    "responses": {"200": {"description": "Signed rs3.starter token"}},
+                    "summary": f"Mint stateless free daily X-Radial-Pass ({FREE_DAILY_STARTER_CALLS} handshakes/UTC-day)",
+                    "responses": {"200": {"description": "Signed rs3.starter token", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "pass_token": {"type": "string"}, "header_name": {"type": "string"}, "remaining_credits": {"type": "integer"}, "expires_unix": {"type": "integer"}}}}}}},
                 }
             },
             "/v1/work/claim": {
                 "post": {
                     "operationId": "claimCanaryScoutWork",
                     "summary": "Claim $0 Canary Scout compute-barter assignment",
-                    "responses": {"200": {"description": "4-endpoint scout challenge"}},
+                    "requestBody": {"required": False, "content": {"application/json": {"schema": {"type": "object"}}}},
+                    "responses": {"200": {"description": "4-endpoint scout challenge", "content": {"application/json": {"schema": {"type": "object", "properties": {"assignment_id": {"type": "string"}, "targets": {"type": "array", "items": {"type": "object"}}}}}}}},
                 }
             },
             "/v1/work/submit": {
                 "post": {
                     "operationId": "submitCanaryScoutWork",
-                    "summary": "Submit 16-hex tool schema hashes for a 20-handshake X-Radial-Pass",
-                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["assignment_id", "results"], "properties": {"assignment_id": {"type": "string"}, "region": {"type": "string"}, "results": {"type": "array", "items": {"type": "object"}}}}}}},
-                    "responses": {"200": {"description": "Work pass issued"}},
+                    "summary": f"Submit 16-hex tool schema hashes for a {WORK_PASS_CREDITS}-handshake X-Radial-Pass",
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["assignment_id", "results"], "properties": {"assignment_id": {"type": "string"}, "region": {"type": "string"}, "results": {"type": "array", "items": {"type": "object", "required": ["agent_id", "tool_schema_hash_16"], "properties": {"agent_id": {"type": "string"}, "tool_schema_hash_16": {"type": "string"}}}}}}}}},
+                    "responses": {"200": {"description": "Work pass issued", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "pass_token": {"type": "string"}, "granted_handshakes": {"type": "integer"}}}}}}},
                 }
             },
             "/v1/enroll": {
@@ -1256,30 +1424,30 @@ def build_openapi_spec(treasury_address: str) -> Dict[str, Any]:
                     "operationId": "enrollGenesisApprentice",
                     "summary": "Enroll W3C did:key (Ed25519) Apprentice agent",
                     "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["enrollment", "signature_ed25519_hex"], "properties": {"enrollment": {"type": "object"}, "signature_ed25519_hex": {"type": "string"}}}}}},
-                    "responses": {"200": {"description": "Apprentice credential issued"}},
+                    "responses": {"200": {"description": "Apprentice credential issued", "content": {"application/json": {"schema": {"type": "object", "properties": {"enrolled": {"type": "boolean"}, "credential": {"type": "object"}}}}}}},
                 }
             },
             "/v1/outcome": {
                 "post": {
                     "operationId": "reportExecutionOutcome",
-                    "summary": "Redeem single-use execution_ticket to update synaptic weight",
+                    "summary": "Redeem single-use HMAC execution_ticket and update synaptic reputation",
                     "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["agent_id", "execution_ticket", "outcome_success"], "properties": {"agent_id": {"type": "string"}, "execution_ticket": {"type": "string"}, "outcome_success": {"type": "boolean"}, "observed_latency_ms": {"type": "number"}}}}}},
-                    "responses": {"200": {"description": "Outcome recorded"}},
+                    "responses": {"200": {"description": "Ticket verified", "content": {"application/json": {"schema": {"type": "object", "properties": {"ticket_valid": {"type": "boolean"}, "synaptic_weight": {"type": "number"}}}}}}, "403": {"description": "Invalid or replayed HMAC ticket"}},
                 }
             },
             "/v1/phonebook/export": {
                 "get": {
                     "operationId": "exportSignedPhonebook",
-                    "summary": "Download HMAC-signed Grade A/B Scouting Phonebook (JSONL or CSV)",
+                    "summary": "Download HMAC-signed Grade A/B directory snapshot (JSONL or CSV)",
                     "parameters": [{"name": "format", "in": "query", "schema": {"type": "string", "enum": ["jsonl", "csv"]}}, {"name": "grades", "in": "query", "schema": {"type": "string", "enum": ["AB", "ALL"]}}],
-                    "responses": {"200": {"description": "Signed JSONL or CSV phonebook"}},
+                    "responses": {"200": {"description": "Signed NDJSON or CSV phonebook stream"}},
                 }
             },
             "/v1/health": {
                 "get": {
                     "operationId": "getSwitchboardHealth",
-                    "summary": "Live audited pool counts, crawler cursor state, and telemetry",
-                    "responses": {"200": {"description": "Health JSON"}},
+                    "summary": "Live audited pool counts, crawler cursor state, and separated call vs probe telemetry",
+                    "responses": {"200": {"description": "Health JSON", "content": {"application/json": {"schema": {"type": "object", "required": ["status", "spec_version", "total_unsorted_pool", "live_callable_ab", "telemetry"], "properties": {"status": {"type": "string"}, "spec_version": {"type": "string"}, "total_unsorted_pool": {"type": "integer"}, "live_callable_ab": {"type": "integer"}, "telemetry": {"type": "object"}}}}}}},
                 }
             },
         },
@@ -1288,20 +1456,34 @@ def build_openapi_spec(treasury_address: str) -> Dict[str, Any]:
 def build_a2a_agent_card() -> Dict[str, Any]:
     return {
         "name": "MglennP Radial Switchboard",
-        "description": "Autonomous 64-bit MGLE-NNP AI-to-AI agent matchmaker, runtime poison/SSRF auditor, 3-agent complementary crew assembler, and Base USDC x402 / $0 Canary Scout clearinghouse.",
+        "description": "Autonomous 64-bit MGLE-NNP AI-to-AI agent matchmaker, zero-auth tools/list verifier, 3-agent complementary crew assembler, and Base USDC x402 / $0 Canary Scout clearinghouse.",
         "version": SPEC_VERSION,
         "url": "https://radialswitchboard.com/mcp",
         "documentationUrl": "https://radialswitchboard.com/llms.txt",
+        "openApiUrl": "https://radialswitchboard.com/openapi.json",
         "provider": {"organization": "MglennP", "url": "https://radialswitchboard.com", "contactEmail": CONTACT_EMAIL},
         "supportedInterfaces": [
             {"url": "https://radialswitchboard.com/mcp", "protocolBinding": "MCP-STREAMABLE-HTTP", "protocolVersion": "2026-07-28"},
             {"url": "https://radialswitchboard.com/v1/flash", "protocolBinding": "HTTP+JSON", "protocolVersion": "1.0"},
         ],
+        "authentication": {
+            "schemes": ["none", "X-Radial-Pass", "x402-base-usdc"],
+            "headerName": "X-Radial-Pass",
+            "freeStarterEndpoint": "https://radialswitchboard.com/v1/keys/starter",
+            "canaryWorkClaimEndpoint": "https://radialswitchboard.com/v1/work/claim",
+        },
+        "rateLimit": {
+            "freeCallsPerUtcDayPerIp": FREE_DAILY_STARTER_CALLS,
+            "unmeteredMethods": ["initialize", "tools/list", "search_agent_directory", "get_agent_dossier", "get_switchboard_telemetry", "report_execution_outcome"],
+            "meteredMethods": ["matchmake_agent_crew", "POST /v1/flash"],
+            "responseHeaders": ["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
+        },
+        "mcpTools": [t["name"] for t in MCP_SERVER_TOOLS],
         "capabilities": {"streaming": False, "pushNotifications": False, "extendedAgentCard": False},
         "defaultInputModes": ["application/json"],
         "defaultOutputModes": ["application/json"],
         "skills": [
-            {"id": "flash-matchmake-top10", "name": "64-Bit Anti-Monoculture Agent Matchmaking", "description": "Finds verified live Grade A/B MCP & A2A endpoints in sub-millisecond bitwise passes with vendor/schema diversity.", "tags": ["mcp", "a2a", "matchmaker", "directory", "x402"]},
+            {"id": "matchmake-agent-crew", "name": "64-Bit Zero-Auth Agent Matchmaking", "description": "Finds verified live Grade A zero-auth MCP & A2A endpoints in sub-second bitwise scans with vendor/schema diversity and tools_preview manifests.", "tags": ["mcp", "a2a", "matchmaker", "directory", "x402"]},
             {"id": "assemble-3-agent-crew", "name": "3-Agent Complementary Crew Triad", "description": "Assembles an independent Compute + Domain + Verifier agent triad across distinct vendors.", "tags": ["crew", "orchestration", "verification"]},
             {"id": "genesis-apprentice-enroll", "name": "Ed25519 did:key Apprentice Credentialing", "description": "Registers self-certifying Blank-Canvas Apprentice agents and issues $0 Canary Scout compute-barter passes.", "tags": ["did:key", "ed25519", "credentialing"]},
         ],
@@ -1318,7 +1500,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Radial-Pass, X-Radial-Caller-Region, PAYMENT-SIGNATURE, mcp-protocol-version, Mcp-Session-Id")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Radial-Snapshot-HMAC, X-Radial-Export-Count")
+            self.send_header("Access-Control-Expose-Headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-Radial-Snapshot-HMAC, X-Radial-Export-Count, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset")
             if extra_headers:
                 for hk, hv in extra_headers.items(): self.send_header(hk, hv)
             self.end_headers(); self.wfile.write(raw)
@@ -1382,11 +1564,22 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     h402 = {"PAYMENT-REQUIRED": build_x402_payment_required_b64(f"https://radialswitchboard.com{self.path}", runtime.gate.treasury_address), "PAYMENT-RESPONSE": build_x402_payment_response_b64("", False, str(exc))}
                     self._json(402, {"http_status": 402, "error": "X402_SETTLEMENT_FAILED", "detail": str(exc)}, h402)
                     return False, {}, h402
+            now_dt = datetime.datetime.now(datetime.timezone.utc)
+            rst_u = str(int((now_dt + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()))
             ok_g, gi = runtime.gate.check_or_issue_402_challenge(ip, tok)
             if not ok_g:
-                h402 = {"PAYMENT-REQUIRED": build_x402_payment_required_b64(f"https://radialswitchboard.com{self.path}", runtime.gate.treasury_address)}
+                h402 = {
+                    "PAYMENT-REQUIRED": build_x402_payment_required_b64(f"https://radialswitchboard.com{self.path}", runtime.gate.treasury_address),
+                    "X-RateLimit-Limit": str(FREE_DAILY_STARTER_CALLS),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": rst_u,
+                }
                 self._json(402, gi, h402)
                 return False, gi, h402
+            rem_v = gi.get("remaining_handshakes", gi.get("remaining_free_today", 0))
+            extra["X-RateLimit-Limit"] = str(CASH_PASS_CREDITS if tok else FREE_DAILY_STARTER_CALLS)
+            extra["X-RateLimit-Remaining"] = str(rem_v)
+            extra["X-RateLimit-Reset"] = rst_u
             return True, gi, extra
 
         def do_GET(self) -> None:
@@ -1400,9 +1593,23 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     html = open(f, "r", encoding="utf-8").read()
                     hl = self._health()
                     tel = hl.get("telemetry") or {}
-                    html = html.replace('<div class="score-value emerald" id="statTotalUses">0</div>', f'<div class="score-value emerald" id="statTotalUses">{int(hl.get("total_external_uses") or 0):,}</div>', 1)
+                    mcp_c = int(tel.get("mcp_jsonrpc_calls") or 0)
+                    rest_c = int(tel.get("rest_matchmake_calls") or 0)
+                    wit_c = int(tel.get("room_handshakes_completed") or 0)
+                    bcn_c = int(tel.get("ai_beacon_discovery_pulls") or 0)
+                    real_calls = mcp_c + rest_c + wit_c
+                    html = html.replace('<div class="score-value emerald" id="statTotalUses">0</div>', f'<div class="score-value emerald" id="statTotalUses">{real_calls:,}</div>', 1)
+                    html = html.replace("0 MCP &bull; 0 REST &bull; 0 Discovery Pulls", f"{mcp_c:,} MCP &bull; {rest_c:,} REST &bull; {bcn_c:,} Discovery Pulls", 1)
                     html = html.replace('<div class="score-value" id="statLiveCallable">0</div>', f'<div class="score-value" id="statLiveCallable">{int(hl.get("live_callable_ab") or 0):,}</div>', 1)
-                    html = html.replace('0 Indexed &bull; 0 Sweeps &bull; 0 Fake Seeds', f'{int(hl.get("total_unsorted_pool") or 0):,} Indexed &bull; {int(tel.get("scout_sweeps_completed") or 0):,} Sweeps &bull; 0 Fake Seeds', 1)
+                    html = html.replace("0 Indexed &bull; 0 Sweeps &bull; 0 Fake Seeds", f'{int(hl.get("total_unsorted_pool") or 0):,} Indexed &bull; {int(tel.get("scout_sweeps_completed") or 0):,} Sweeps &bull; 0 Fake Seeds', 1)
+                    top_rows = sorted([r for r in runtime.pool_by_id.values() if r.get("guarantee_grade") == "A" and r.get("auth_mode") == "none"], key=lambda x: float(x.get("avg_latency_ms") or 99999.0))[:5]
+                    if top_rows:
+                        _esc = __import__("html").escape
+                        ssr_trs = "".join(
+                            f"<tr><td>{_esc(str(r.get('agent_id') or ''))}</td><td class='mono'>{_esc(str(r.get('mgle_nnp_stamp') or ''))}</td><td class='mono'>{_esc(str(r.get('mgle_nnp_u64_hex') or ''))}</td><td class='mono'>{_esc(str(r.get('endpoint') or ''))}</td><td class='mono'>{r.get('avg_latency_ms')} ms</td><td class='mono'>{int(r.get('wired_tool_count') or 1)} / {_esc(str(r.get('auth_mode') or 'none'))}</td><td>{_esc(str(r.get('audit_status') or ''))}</td></tr>"
+                            for r in top_rows
+                        )
+                        html = re.sub(r'<tbody id="directoryTableBody">.*?</tbody>', f'<tbody id="directoryTableBody">{ssr_trs}</tbody>', html, count=1, flags=re.S)
                     html = re.sub(r"SPEC (REV )?3\.5\.\d+", lambda m: f"SPEC {m.group(1) or ''}{SPEC_VERSION}", html)
                     self._bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 else:
@@ -1512,7 +1719,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                         ok_g, _, ex_h = self._enforce_gate(ip, ag)
                         if not ok_g: return
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route=f"POST /mcp [{tn}]", ua=ua, ip=ip)
-                        out = flash_unsorted_pool(list(runtime.pool_by_id.values()), ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), bool(ag.get("require_instant_zero_auth", False)), str(ag.get("max_latency_grade", "E")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"), caller_region=self._caller_region(None, ag))
+                        out = flash_unsorted_pool(list(runtime.pool_by_id.values()), ag.get("capabilities") or infer_capabilities_from_intent(str(ag.get("intent") or "")), bool(ag.get("require_instant_zero_auth", True)), str(ag.get("max_latency_grade", "C")), top_k=int(ag.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(ag.get("mode") or "top10_varied"), caller_region=self._caller_region(None, ag))
                     elif tn == "search_agent_directory":
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [search_agent_directory]", ua=ua, ip=ip)
                         q_s = str(ag.get("query") or "").strip().lower()
@@ -1521,20 +1728,27 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                         matched = []
                         for rec in runtime.pool_by_id.values():
                             gr = str(rec.get("latency_grade") or "E").upper()
-                            if rec.get("merit_grade") == "F" or gr == "F": continue
-                            if gf == "AB" and gr not in ("A", "B"): continue
-                            if gf in ("A", "B", "C", "D") and gr != gf: continue
+                            gg = str(rec.get("guarantee_grade") or "E").upper()
+                            if rec.get("merit_grade") == "F" or gr == "F" or gg == "F": continue
+                            if gf == "AB" and (gg not in ("A", "B") or gr not in ("A", "B", "C")): continue
+                            if gf in ("A", "B", "C", "D") and gg != gf: continue
                             if q_s and q_s not in f"{rec.get('agent_id','')} {rec.get('name','')} {rec.get('description','')} {rec.get('endpoint','')}".lower():
                                 continue
+                            ep_u = str(rec.get("endpoint") or "")
                             matched.append({
                                 "agent_id": rec.get("agent_id"),
                                 "name": rec.get("name"),
-                                "endpoint": rec.get("endpoint"),
+                                "endpoint": ep_u,
+                                "transport": "mcp-sse" if ep_u.lower().endswith("/sse") else ("a2a-http-json" if str(rec.get("agent_id") or "").startswith("a2a://") else "mcp-streamable-http"),
                                 "mgle_nnp_stamp": rec.get("mgle_nnp_stamp"),
                                 "mgle_nnp_u64_hex": rec.get("mgle_nnp_u64_hex"),
+                                "guarantee_grade": gg,
                                 "latency_grade": gr,
                                 "merit_grade": rec.get("merit_grade"),
                                 "avg_latency_ms": rec.get("avg_latency_ms"),
+                                "auth_mode": rec.get("auth_mode", "none"),
+                                "wired_tool_count": int(rec.get("wired_tool_count") or 0),
+                                "tool_schema_hash_16": rec.get("tool_schema_hash_16"),
                                 "audit_status": rec.get("audit_status"),
                             })
                         matched.sort(key=lambda x: (str(x.get("latency_grade") or "Z"), float(x.get("avg_latency_ms") or 9999.0)))
@@ -1565,7 +1779,8 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                         lv = ag.get("observed_latency_ms")
                         out = runtime.verify_outcome(str(ag.get("agent_id") or ""), str(ag.get("execution_ticket") or ""), bool(ag.get("outcome_success", True)), float(lv) if isinstance(lv, (int, float)) else None)
                     else: self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unknown tool"}}); return
-                    self._json(200, {"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": json.dumps(out)}], "structuredContent": out, "isError": False}}, ex_h or None)
+                    txt_summary = json.dumps({"tool": tn, "finalist_count": out.get("finalist_count"), "match_mode": out.get("match_mode"), "top_endpoints": [{"agent_id": f.get("agent_id"), "endpoint": f.get("endpoint"), "transport": f.get("transport"), "auth_mode": f.get("auth_mode"), "tools": [t.get("tool") for t in (f.get("tools_preview") or [])], "execution_ticket": f.get("execution_ticket")} for f in (out.get("finalists") or [])[:5]]}, separators=(",", ":")) if "finalists" in out else json.dumps(out, separators=(",", ":"))
+                    self._bytes(200, "application/json; charset=utf-8", json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": txt_summary}], "structuredContent": out, "isError": False}}, separators=(",", ":")).encode("utf-8"), ex_h or None)
                 else:
                     self._json(200, {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "Unsupported"}})
             elif p == "/v1/keys/starter":
@@ -1585,7 +1800,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     runtime.record_event("rest_matchmake_calls", ext_call=True)
                 else:
                     ex_h = {}
-                self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), body.get("capabilities") or infer_capabilities_from_intent(str(body.get("intent") or "")), bool(body.get("require_instant_zero_auth", False)), str(body.get("max_latency_grade", "E")), top_k=int(body.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(body.get("mode") or "top10_varied"), caller_region=self._caller_region(None, body)), ex_h)
+                self._json(200, flash_unsorted_pool(list(runtime.pool_by_id.values()), body.get("capabilities") or infer_capabilities_from_intent(str(body.get("intent") or "")), bool(body.get("require_instant_zero_auth", True)), str(body.get("max_latency_grade", "C")), top_k=int(body.get("top_k", DEFAULT_FLASH_TOP_K)), mode=str(body.get("mode") or "top10_varied"), caller_region=self._caller_region(None, body)), ex_h)
             elif p == "/v1/directory/crawl":
                 self._json(200, runtime.run_live_scout_sweep(int(body.get("limit", 80))))
             elif p == "/v1/appeals":
@@ -1635,6 +1850,9 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
 def run_self_test() -> int:
     rt = StandaloneSwitchboardRuntime(hydrate_external=False, start_background_scouts=False)
     assert len(rt.pool_by_id) == 0 and rt.telemetry["total_external_uses"] == 0
+    gated_rec = build_agent_record_and_dossier("test://ekwo-gated", "Auth Gated Accounting", "postgres sql database finance", "https://mcp.ekwo.example/mcp", True, 110.0, None, [], "none", geo_zone="U")
+    assert gated_rec["auth_mode"] != "none" and gated_rec["guarantee_grade"] == "C" and gated_rec["wired_tool_count"] == 0
+    rt.pool_by_id["test://ekwo-gated"] = gated_rec
     defs = [
         ("test://v0", "Postgres SQL US-East", "postgres sql database python", "https://n0.use1.v0.example/mcp", "E"),
         ("test://v1", "SEC Finance EU", "sec finance search rag", "https://n1.eu-west.v1.example/mcp", "U"),
@@ -1650,11 +1868,15 @@ def run_self_test() -> int:
         h = json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())
         assert h["spec_version"] == SPEC_VERSION and h["synthetic_seed_rows"] == 0
         oa = json.loads(urllib.request.urlopen(f"{base}/openapi.json?ui_observer=true", timeout=5).read().decode())
-        assert "/v1/flash" in oa["paths"] and "/mcp" in oa["paths"]
+        assert oa["info"]["version"] == SPEC_VERSION and "RadialPassHeader" in oa["components"]["securitySchemes"]
+        mcp_well = json.loads(urllib.request.urlopen(f"{base}/.well-known/mcp.json?ui_observer=true", timeout=5).read().decode())
+        assert mcp_well["info"]["version"] == SPEC_VERSION
         lt = urllib.request.urlopen(f"{base}/llms.txt?ui_observer=true", timeout=5).read().decode()
-        assert "flash_matchmake_agents" in lt and "/v1/work/claim" in lt
+        assert f"Spec Rev {SPEC_VERSION}" in lt and "matchmake_agent_crew" in lt and "search_agent_directory" in lt
         ac = json.loads(urllib.request.urlopen(f"{base}/.well-known/agent-card.json", timeout=5).read().decode())
-        assert ac["version"] == SPEC_VERSION and len(ac["skills"]) == 3
+        assert ac["version"] == SPEC_VERSION and len(ac["mcpTools"]) == 6 and "rateLimit" in ac
+        home_html = urllib.request.urlopen(f"{base}/", timeout=5).read().decode()
+        assert f"SPEC REV {SPEC_VERSION}" in home_html and "test://v0" in home_html
         eu_f = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/flash", data=json.dumps({"capabilities": ["sql"], "caller_region": "EU", "ui_observer": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
         assert eu_f["caller_region_applied"] == "U" and eu_f["finalists"][0]["agent_id"] == "test://v9"
         cr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/v1/flash", data=json.dumps({"capabilities": ["sql", "finance_data", "math_verify"], "mode": "crew", "ui_observer": True}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
@@ -1672,8 +1894,13 @@ def run_self_test() -> int:
         assert len(tnames) == 6 and "matchmake_agent_crew" in tnames and "report_execution_outcome" in tnames
         sr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "search_agent_directory", "arguments": {"query": "postgres", "limit": 5}}}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
         assert sr["result"]["structuredContent"]["total_matching"] >= 1
-        mr = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "matchmake_agent_crew", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
-        tkt, tid = mr["result"]["structuredContent"]["finalists"][0]["execution_ticket"], mr["result"]["structuredContent"]["finalists"][0]["agent_id"]
+        with urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "matchmake_agent_crew", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5) as r_mcp:
+            assert r_mcp.headers.get("X-RateLimit-Remaining") is not None
+            mr = json.loads(r_mcp.read().decode())
+        assert len(json.dumps(mr)) < 15000
+        f0 = mr["result"]["structuredContent"]["finalists"][0]
+        assert f0["transport"] == "mcp-streamable-http" and f0["auth_mode"] == "none" and len(f0["tools_preview"]) >= 1 and f0["agent_id"] != "test://ekwo-gated"
+        tkt, tid = f0["execution_ticket"], f0["agent_id"]
         mr_alias = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "flash_matchmake_agents", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
         assert mr_alias["result"]["structuredContent"]["finalist_count"] >= 1
         ok_o = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 12, "method": "tools/call", "params": {"name": "report_execution_outcome", "arguments": {"agent_id": tid, "execution_ticket": tkt, "outcome_success": True, "observed_latency_ms": 48.5}}}).encode(), headers={"Content-Type": "application/json"}, method="POST"), timeout=5).read().decode())
