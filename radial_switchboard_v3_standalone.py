@@ -7,7 +7,7 @@ import io, ipaddress, json, os, random, re, secrets, socketserver, ssl, threadin
 import urllib.error, urllib.parse, urllib.request
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-SPEC_VERSION = "3.5.7"
+SPEC_VERSION = "3.5.8"
 SCHEMA_NIBBLE = 0x3
 CONTACT_EMAIL = "support@radialswitchboard.com"
 PUBLIC_GITHUB_REPO = "https://github.com/MglennP2/mglennp-radial-switchboard"
@@ -16,7 +16,7 @@ BASE_MAINNET_CHAIN_ID, BASE_USDC_CONTRACT = "eip155:8453", "0x833589fCD6eDb6E08f
 DEFAULT_FLASH_TOP_K, MAX_FLASH_TOP_K = 10, 25
 CASH_PASS_PRICE_USDC, CASH_PASS_ATOMIC_USDC, CASH_PASS_CREDITS, CASH_PASS_TTL_SECONDS = "0.01", "10000", 100, 86400 * 30
 WORK_ASSIGNMENT_SIZE, WORK_PASS_CREDITS, WORK_PASS_TTL_SECONDS = 4, 20, 3600
-FREE_DAILY_STARTER_CALLS, EXECUTION_TICKET_TTL_SECONDS = 15, 86400
+FREE_DAILY_STARTER_CALLS, EXECUTION_TICKET_TTL_SECONDS = 15, 900
 TAX_RESERVE_RATIO, OPERATING_CASH_RATIO, POST_TAX_TREASURY_SLICE_RATIO = 0.30, 0.60, 0.10
 
 _RAW_HMAC_ENV = (os.environ.get("RADIAL_HMAC_SECRET") or os.environ.get("OPERATOR_KEY") or "").strip()
@@ -47,7 +47,7 @@ CAPABILITY_KEYWORDS = {
     "git_ops": ("github", "gitlab", "git", "pull_request", "commit", "repository", "branch"),
     "web_fetch": ("fetch", "scrape", "crawl", "browser", "playwright", "http", "webpage"),
     "search_rag": ("search", "rag", "retrieve", "arxiv", "wikipedia", "lookup", "citation"),
-    "math_verify": ("math", "calculus", "solver", "verify", "proof", "statistics", "symbolic"),
+    "math_verify": ("math", "calculus", "solver", "verify", "verification", "validate", "validation", "reconcile", "reconciliation", "proof", "statistics", "symbolic"),
     "finance_data": ("finance", "sec", "stock", "equity", "market", "accounting", "portfolio"),
     "crypto_chain": ("blockchain", "base", "ethereum", "solana", "erc20", "defi", "onchain", "rpc", "crypto"),
     "payments_x402": ("x402", "usdc", "stripe", "payment", "invoice", "checkout", "settlement"),
@@ -72,7 +72,9 @@ TOOL_POISONING_PATTERNS = (
     re.compile(r"system\s*prompt\s*override", re.I),
 )
 UNWIRED_STUB_PAT = re.compile(r"\b(not\s+wired|unwired|not\s+implemented|coming\s+soon|placeholder\s+only|mock\s+only|todo\s+stub)\b", re.I)
-X402_PAID_PAT = re.compile(r"\b(paid\s+per\s+call|pay\s+per\s+call|over\s+x402|x402\s+payment|requires\s+x402|micropayment\s+required|buy_credits|usdc\s+per\s+call)\b", re.I)
+X402_PAID_PAT = re.compile(r"\b(paid\s+per\s+call|pay\s+per\s+call|over\s+x402|x402\s+payment|requires\s+x402|micropayment\s+required|buy_credits|usdc\s+credits?|usdc\s+per\s+call|prepaid\s+credits?|top\s+up\s+credits?|payment\s+gated)\b", re.I)
+OAUTH_OR_KEY_PAT = re.compile(r"\b(with\s+oauth|oauth2?\s+required|requires?\s+oauth|requires?\s+api\s+key|api[_\s-]?key\s+required|bearer\s+token\s+required|sign\s+in\s+to\s+use|login\s+required|requires?\s+authentication)\b", re.I)
+AUTH_INPUT_KEYS = {"api_key", "apikey", "access_token", "auth_token", "bearer_token", "oauth_token", "secret_key", "session_token", "jwt_token"}
 SIDE_EFFECT_VERBS = {"buy", "call", "create", "delete", "drop", "execute", "insert", "mint", "modify", "order", "pay", "post", "publish", "purchase", "put", "remove", "run", "send", "settle", "submit", "swap", "trade", "transfer", "trigger", "update", "upload", "write"}
 READ_ONLY_VERBS = {"analyze", "check", "compute", "convert", "count", "decode", "describe", "detect", "estimate", "eval", "explain", "extract", "fetch", "find", "forecast", "format", "get", "inspect", "list", "lookup", "parse", "ping", "preview", "query", "read", "resolve", "retrieve", "scan", "search", "select", "show", "simulate", "solve", "status", "summarize", "validate", "verify"}
 STOPWORDS_INTENT = {"a", "an", "and", "agent", "api", "by", "call", "data", "for", "from", "get", "in", "into", "is", "it", "mcp", "mode", "need", "of", "on", "or", "server", "the", "to", "tool", "tools", "use", "using", "with"}
@@ -495,43 +497,58 @@ def select_varied_top_k(scored: Sequence[Tuple[float, Dict[str, Any]]], top_k: i
 
 def assemble_complementary_crew(scored: Sequence[Tuple[float, Dict[str, Any]]], req_cap: int) -> Tuple[List[Tuple[Dict[str, Any], str, str]], Dict[str, Any]]:
     if not scored: return [], {"crew_size": 0, "unique_vendor_domains": 0, "single_agent_coverage_pct": 0.0, "crew_combined_coverage_pct": 0.0, "provider_independence_verified": False}
+    non_ver_req = req_cap & (~VERIFY_MASK)
     enr = []
     for sc, r in scored:
         vd = extract_vendor_domain(str(r.get("endpoint") or ""))
         cm = int(r.get("domain_mask") or (int(r.get("mgle_nnp_64bit") or 0) & 0x00FFFFFF))
         v_tools = ((r.get("dossier_json") or {}).get("verified_tools") or []) if isinstance(r.get("dossier_json"), dict) else []
-        t_blob = " ".join(f"{t.get('tool','')} {t.get('summary','')}" for t in v_tools if isinstance(t, dict)).lower()
-        has_ver_sem = bool(cm & VERIFY_MASK) or any(w in t_blob for w in ("verify", "validate", "audit", "check", "proof", "math", "test", "schema", "inspect", "security"))
-        enr.append((sc, vd, cm, has_ver_sem, r))
-    u_ids, u_vends, crew, masks = set(), set(), [], []
+        param_ro_tools = [
+            t for t in v_tools
+            if isinstance(t, dict) and t.get("callable_now", True) and t.get("tool") != "verified_schema"
+            and str(t.get("effect_class") or "read_only") == "read_only"
+            and (len(t.get("inputs") or {}) >= 1 or len(t.get("required") or []) >= 1)
+        ]
+        has_param_ro = len(param_ro_tools) >= 1
+        t_blob = " ".join(f"{t.get('tool','')} {t.get('summary','')}" for t in param_ro_tools).lower()
+        ver_kw = any(w in t_blob for w in ("verify", "validate", "audit", "check", "proof", "math", "compare", "statement", "balance", "query", "sql", "fact", "reconcile", "inspect"))
+        dom_overlap = bool((cm & non_ver_req) if non_ver_req else (cm & req_cap))
+        has_ver_cap = has_param_ro and (bool(cm & VERIFY_MASK) or (ver_kw and dom_overlap))
+        enr.append((sc, vd, cm, has_ver_cap, has_param_ro, r))
+    u_ids, u_vends, crew, masks, ver_flags = set(), set(), [], [], []
     roles = (
-        ("1_COMPUTE_EXECUTION", lambda s, v, m, vs: s + (0.18 if (m & (COMPUTE_MASK | req_cap)) else -0.30) + (((m & req_cap).bit_count() * 0.22 - max(0, m.bit_count() - max(1, req_cap.bit_count()) - 3) * 0.025) if req_cap else 0.0) - (0.45 if (req_cap and (m & req_cap) == 0) else 0.0)),
-        ("2_DOMAIN_KNOWLEDGE_COMPLEMENT", lambda s, v, m, vs: s + (0.30 if v not in u_vends else -0.35) + ((((m & ~(masks[0] if masks else 0)) & req_cap).bit_count() * 0.30 + ((m & req_cap).bit_count() / max(1, m.bit_count())) * 0.20) if req_cap else 0.0) - (0.45 if (req_cap and (m & req_cap) == 0) else 0.0)),
-        ("3_INDEPENDENT_VERIFICATION", lambda s, v, m, vs: s + (0.35 if v not in u_vends else -0.35) + (0.32 if (m & VERIFY_MASK) else (0.15 if vs else -0.60)) - max(0, m.bit_count() - 7) * 0.02),
+        ("1_COMPUTE_EXECUTION", lambda s, v, m, vc, pr: s + (0.20 if (m & (COMPUTE_MASK | req_cap)) else -0.30) + (((m & req_cap).bit_count() * 0.24 - max(0, m.bit_count() - max(1, req_cap.bit_count()) - 3) * 0.03) if req_cap else 0.0) - (0.45 if (req_cap and (m & req_cap) == 0) else 0.0)),
+        ("2_DOMAIN_KNOWLEDGE_COMPLEMENT", lambda s, v, m, vc, pr: s + (0.32 if v not in u_vends else -0.40) + ((((m & ~(masks[0] if masks else 0)) & req_cap).bit_count() * 0.34 + ((m & req_cap).bit_count() / max(1, m.bit_count())) * 0.20) if req_cap else 0.0) - (0.45 if (req_cap and (m & req_cap) == 0) else 0.0)),
+        ("3_INDEPENDENT_VERIFICATION", lambda s, v, m, vc, pr: s + (0.38 if v not in u_vends else -0.45) + (0.36 if vc else (-0.80 if not pr else -0.25)) + (0.18 if (non_ver_req and (m & non_ver_req)) else 0.0) + (0.14 if (m & VERIFY_MASK) else 0.0) - max(0, m.bit_count() - 6) * 0.025),
     )
     for r_name, fn in roles:
         best, bs = None, -999.0
-        for sc, vd, cm, vs, rec in enr:
-            if str(rec.get("agent_id") or "") in u_ids: continue
-            if r_name == "3_INDEPENDENT_VERIFICATION" and not vs and any(x[3] for x in enr if str(x[4].get("agent_id") or "") not in u_ids):
-                continue
-            adj = fn(sc, vd, cm, vs)
-            if adj > bs: bs, best = adj, (rec, r_name, vd, cm)
+        has_strict_ver = any(x[3] and x[1] not in u_vends for x in enr if str(x[5].get("agent_id") or "") not in u_ids)
+        has_any_param = any(x[4] and x[1] not in u_vends for x in enr if str(x[5].get("agent_id") or "") not in u_ids)
+        for sc, vd, cm, vc, pr, rec in enr:
+            aid = str(rec.get("agent_id") or "")
+            if aid in u_ids: continue
+            if r_name == "3_INDEPENDENT_VERIFICATION":
+                if has_strict_ver and not vc: continue
+                if not has_strict_ver and has_any_param and not pr: continue
+            adj = fn(sc, vd, cm, vc, pr)
+            if adj > bs: bs, best = adj, (rec, r_name, vd, cm, vc)
         if best:
-            rc, rn, vd, cm = best
-            crew.append((rc, rn, vd)); u_ids.add(str(rc.get("agent_id") or "")); u_vends.add(vd); masks.append(cm)
+            rc, rn, vd, cm, vc = best
+            crew.append((rc, rn, vd)); u_ids.add(str(rc.get("agent_id") or "")); u_vends.add(vd); masks.append(cm); ver_flags.append(vc)
     comb = 0
     for m in masks: comb |= m
-    eff_req = req_cap | (VERIFY_MASK if len(crew) >= 3 and (comb & VERIFY_MASK) else 0)
     den = max(1, req_cap.bit_count()) if req_cap else 1
     scov = round(min(100.0, (((masks[0] if masks else 0) & req_cap).bit_count() / den) * 100.0), 1) if req_cap else 100.0
     ccov = round(min(100.0, ((comb & req_cap).bit_count() / den) * 100.0), 1) if req_cap else 100.0
-    ver_ok = bool(masks[-1] & VERIFY_MASK) if len(masks) >= 3 else False
-    return crew, {"crew_size": len(crew), "roles_assigned": [x[1] for x in crew], "unique_vendor_domains": len(u_vends), "single_agent_coverage_pct": scov, "crew_combined_coverage_pct": ccov, "verifier_capability_confirmed": ver_ok, "provider_independence_verified": len(u_vends) == len(crew) and len(crew) > 0}
+    ver_ok = bool(ver_flags[-1]) if len(ver_flags) >= 3 else False
+    return crew, {"crew_size": len(crew), "roles_assigned": [x[1] for x in crew], "unique_vendor_domains": len(u_vends), "single_agent_coverage_pct": scov, "crew_combined_coverage_pct": ccov, "verifier_capability_confirmed": ver_ok, "verifier_accepts_inputs": ver_ok, "provider_independence_verified": len(u_vends) == len(crew) and len(crew) > 0}
 
-def _compute_stage2_lexical_score(rec: Dict[str, Any], query_terms: List[str], req_c24: int, ag_c24: int) -> float:
-    if not query_terms and not req_c24:
-        return 0.15
+def _get_or_build_lex_cache(rec: Dict[str, Any]) -> Tuple[str, set[str], str, set[str], str, set[str]]:
+    c = rec.get("_lex_cache")
+    wtc = int(rec.get("wired_tool_count") or 0)
+    if isinstance(c, tuple) and len(c) == 7 and c[6] == wtc:
+        return c[:6]
     dos = rec.get("dossier_json") if isinstance(rec.get("dossier_json"), dict) else {}
     v_tools = [t for t in (dos.get("verified_tools") or []) if isinstance(t, dict) and t.get("callable_now", True)]
     t_names_str = " ".join(str(t.get("tool") or "") for t in v_tools).lower()
@@ -543,20 +560,28 @@ def _compute_stage2_lexical_score(rec: Dict[str, Any], query_terms: List[str], r
             if len(p) >= 2: tn_words.add(p)
     ts_words = set(_tokenize_words(t_sums_str))
     md_words = set(_tokenize_words(meta_str))
+    built = (t_names_str, tn_words, t_sums_str, ts_words, meta_str, md_words, wtc)
+    rec["_lex_cache"] = built
+    return built[:6]
+
+def _compute_stage2_lexical_score(rec: Dict[str, Any], query_terms: List[str], req_c24: int, ag_c24: int) -> float:
+    if not query_terms and not req_c24:
+        return 0.15
+    t_names_str, tn_words, t_sums_str, ts_words, meta_str, md_words = _get_or_build_lex_cache(rec)
     lex_hits = 0.0
     matched_terms = 0
     for qt in query_terms:
         hit_this = False
         if _kw_matches_text(qt, t_names_str, tn_words):
-            lex_hits += 0.24; hit_this = True
+            lex_hits += 0.25; hit_this = True
         if _kw_matches_text(qt, t_sums_str, ts_words):
-            lex_hits += 0.12; hit_this = True
+            lex_hits += 0.11; hit_this = True
         if _kw_matches_text(qt, meta_str, md_words):
-            lex_hits += 0.08; hit_this = True
+            lex_hits += 0.07; hit_this = True
         if hit_this:
             matched_terms += 1
-    term_cov = (matched_terms / max(1, len(query_terms))) * 0.25 if query_terms else 0.0
-    return round(min(0.95, lex_hits + term_cov), 4)
+    term_cov = (matched_terms / max(1, len(query_terms))) * 0.26 if query_terms else 0.0
+    return round(min(0.98, lex_hits + term_cov), 4)
 
 def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zero_auth: bool = False, max_lat: str = "C", zero_hop: bool = True, top_k: int = DEFAULT_FLASH_TOP_K, mode: str = "top10_varied", caller_region: str = "GLOBAL", intent_text: str = "") -> Dict[str, Any]:
     t0 = time.perf_counter()
@@ -602,20 +627,23 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
         req_pop = max(1, req_c24.bit_count()) if req_c24 else 1
         ag_pop = max(1, (ag_c24 & (~CAPABILITY_BITS["general"])).bit_count() or ag_c24.bit_count())
         extra_bits = max(0, ag_pop - req_pop)
-        bit_cov = (ov_c24 / req_pop) * 0.34 if req_c24 else 0.15
-        bit_prec = (ov_c24 / ag_pop) * 0.26 - max(0, extra_bits - 2) * 0.022 if req_c24 else 0.0
+        wtc_i = int(rec.get("wired_tool_count") or 0)
+        multi_cap_bonus = (0.18 * (ov_c24 - 1)) if ov_c24 >= 2 else 0.0
+        hub_sprawl_pen = (min(0.22, (wtc_i - 12) * 0.012) if (wtc_i > 12 and ov_c24 <= 1) else 0.0) + max(0, extra_bits - 2) * 0.035
+        bit_cov = (ov_c24 / req_pop) * 0.40 if req_c24 else 0.15
+        bit_prec = (ov_c24 / ag_pop) * 0.28 - hub_sprawl_pen if req_c24 else 0.0
         lex_sc = _compute_stage2_lexical_score(rec, query_terms, req_c24, ag_c24)
         dos_t = ((rec.get("dossier_json") or {}).get("verified_tools")) or []
         vt_len = sum(1 for t in dos_t if isinstance(t, dict) and t.get("callable_now", True))
-        inv_bonus = 0.06 if (vt_len > 0 and int(rec.get("wired_tool_count") or 0) >= vt_len) else -0.06
+        inv_bonus = 0.06 if (vt_len > 0 and wtc_i >= vt_len) else -0.06
         lat_bonus = 0.04 * (6 - ((u32 >> 24) & 0xF)) + 0.02 * (6 - ((u32 >> 16) & 0xF))
-        total_sc = round(wt * 0.45 + geo_boost + bit_cov + bit_prec + lex_sc + inv_bonus + lat_bonus, 4)
+        total_sc = round(wt * 0.42 + geo_boost + bit_cov + bit_prec + multi_cap_bonus + lex_sc + inv_bonus + lat_bonus, 4)
         if (mode or "").strip().lower() == "crew" and ((ag_c24 & VERIFY_MASK) or ov_c24 > 0 or lex_sc > 0.08):
             crew_viable.append((total_sc, rec))
         if req_c24 and ov_c24 == 0 and lex_sc < 0.12:
             continue
         stage2_scored.append((total_sc, ov_c24, lex_sc, rec))
-    stage2_scored.sort(key=lambda x: (1 if (x[1] > 0 and x[2] > 0) else (0 if x[1] > 0 else -1), x[0]), reverse=True)
+    stage2_scored.sort(key=lambda x: (2 if (x[1] >= 2 and x[2] > 0) else (1 if (x[1] > 0 and x[2] > 0) else (0 if x[1] > 0 else -1)), x[0]), reverse=True)
     crew_viable.sort(key=lambda x: x[0], reverse=True)
     strong_pool = [(sc, r) for sc, ov, lx, r in stage2_scored if (ov > 0 and (lx > 0.0 or not query_terms)) or lx >= 0.20]
     fallback_pool = [(sc, r) for sc, ov, lx, r in stage2_scored]
@@ -654,13 +682,15 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
         t_prev = [
             {
                 "tool": t.get("tool"),
+                "summary": str(t.get("summary") or f"{str(t.get('tool') or '').replace('_', ' ')}").strip()[:72],
                 "required": t.get("required", []),
                 "inputs": t.get("inputs", {}),
-                "callable_now": bool(t.get("callable_now", True)),
+                "callable_now": bool(t.get("callable_now", True)) and (r.get("auth_mode", "none") == "none") and not bool(r.get("payment_required", False)),
                 "effect_class": str(t.get("effect_class") or "read_only"),
             }
-            for t in callable_v_tools[:5]
+            for t in callable_v_tools[:3]
         ]
+        eff_wired_cnt = max(len(t_prev), int(r.get("wired_tool_count") or len(t_prev)))
         ag_u64 = int(r.get("mgle_nnp_64bit") or 0)
         ag_caps = [n for n, b in CAPABILITY_BITS.items() if (ag_u64 & 0x00FFFFFF) & b]
         matched_caps = [n for n in ag_caps if (req_c24 & CAPABILITY_BITS[n])] if req_c24 else ag_caps
@@ -681,8 +711,10 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
             "latency_grade": r.get("latency_grade"),
             "warm_latency_ms": r.get("avg_latency_ms"),
             "auth_mode": r.get("auth_mode", "none"),
+            "auth_hint": r.get("auth_hint", "open_zero_auth_probed" if r.get("auth_mode", "none") == "none" and not bool(r.get("payment_required", False)) else r.get("auth_mode", "auth_required")),
             "payment_required": bool(r.get("payment_required", False)),
-            "wired_tool_count": max(len(t_prev), int(r.get("wired_tool_count") or len(t_prev))),
+            "wired_tool_count": eff_wired_cnt,
+            "tools_preview_truncated": eff_wired_cnt > len(t_prev),
             "tool_schema_hash_16": r.get("tool_schema_hash_16"),
             "matched_capabilities": matched_caps,
             "relevance_score": round(float(score_by_id.get(aid_s, r.get("synaptic_weight") or 0.80)), 4),
@@ -696,8 +728,9 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
         })
     conf = "high" if (len(strong_pool) >= 3) else ("medium" if len(strong_pool) >= 1 else "low_confidence_no_strong_match")
     out = {
-        "spec_version": SPEC_VERSION, "rating_disclaimer": RATING_DISCLAIMER_TEXT, "legal_url": "https://radialswitchboard.com/legal",
+        "spec_version": SPEC_VERSION,
         "rating_disclaimer": RATING_DISCLAIMER_TEXT,
+        "legal_url": "https://radialswitchboard.com/legal",
         "caller_region_applied": c_reg,
         "pool_scanned_unsorted": len(pool),
         "scanned_pool_count": len(pool),
@@ -716,6 +749,26 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
     }
     if crew_m is not None: out["crew_manifest"] = crew_m
     return out
+
+def detect_auth_and_payment_hints(name: str, desc: str, c_tools: Sequence[Dict[str, Any]], auth_m: str, x402_ok: bool) -> Tuple[str, bool, str]:
+    blob = f"{name} {desc} " + " ".join(f"{t.get('tool','')} {t.get('summary','')}" for t in c_tools if isinstance(t, dict))
+    req_in_keys = {str(rk).lower() for t in c_tools if isinstance(t, dict) for rk in (t.get("required") or [])}
+    all_in_keys = {str(ik).lower() for t in c_tools if isinstance(t, dict) for ik in (t.get("inputs") or {}).keys()}
+    is_paid = bool(x402_ok or str(auth_m or "").startswith("x402") or X402_PAID_PAT.search(blob) or any(t.get("tool") in ("buy_credits", "topup_credits", "add_funds") for t in c_tools if isinstance(t, dict)))
+    has_oauth_or_key = bool(OAUTH_OR_KEY_PAT.search(blob) or (req_in_keys & AUTH_INPUT_KEYS))
+    soft_key_opt = bool(all_in_keys & AUTH_INPUT_KEYS) and not has_oauth_or_key
+    eff_auth = str(auth_m or "none")
+    if is_paid and eff_auth == "none":
+        eff_auth = "x402_or_credit_gated"
+    elif has_oauth_or_key and eff_auth == "none":
+        eff_auth = "oauth_or_apikey_required"
+    if eff_auth == "none" and not is_paid:
+        hint = "optional_key_param_present" if soft_key_opt else "open_zero_auth_probed"
+    elif is_paid:
+        hint = "prepaid_credits_or_x402_required"
+    else:
+        hint = eff_auth
+    return eff_auth, is_paid, hint
 
 def extract_capabilities_and_hash(blob: str, tools: Sequence[Dict[str, Any]]) -> Tuple[int, str, List[Dict[str, Any]]]:
     pts, inv = [blob or ""], []
@@ -753,12 +806,16 @@ def build_agent_record_and_dossier(aid: str, name: str, desc: str, ep: str, aliv
     p_ok = not any(pat.search(json.dumps(t)) for t in tools if isinstance(t, dict) for pat in TOOL_POISONING_PATTERNS)
     clean_desc = str(desc or "").split(" /*RADIAL_TOOLS:")[0].strip()
     c_mask, h16, c_tools = extract_capabilities_and_hash(f"{name} {clean_desc}", tools)
-    callable_tools = [t for t in c_tools if t.get("callable_now", True)]
-    pay_text = f"{name} {clean_desc} " + " ".join(f"{t.get('tool','')} {t.get('summary','')}" for t in c_tools)
-    is_paid = bool(x402_ok or X402_PAID_PAT.search(pay_text))
-    if is_paid and auth_m == "none":
-        auth_m = "x402_paid_per_call"
+    callable_tools = [t for t in c_tools if t.get("callable_now", True) and t.get("tool") != "verified_schema"]
+    auth_m, is_paid, auth_hint = detect_auth_and_payment_hints(name, clean_desc, c_tools, auth_m, x402_ok)
+    if is_paid:
         x402_ok = True
+    if auth_m != "none" or is_paid:
+        for ct_item in callable_tools:
+            ct_item["callable_without_credentials"] = False
+    else:
+        for ct_item in callable_tools:
+            ct_item["callable_without_credentials"] = True
     eff = warm_ms if warm_ms is not None else cold_ms
     zone = (geo_zone or infer_endpoint_geo_zone(ep, None, eff))[:1].upper()
     if zone not in NEIGHBOR_TO_NIBBLE: zone = "E"
@@ -786,7 +843,7 @@ def build_agent_record_and_dossier(aid: str, name: str, desc: str, ep: str, aliv
     stamp, u64, u64_hex = MgleNnp64Codec.pack(merit_g, guar_g, lat_g, "B" if is_paid else "A", node_h, zone, "S" if lat_g in ("A", "B") else "D", r_mask, c_mask)
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
     dos = {"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "geo_zone": zone, "mgle_nnp_code": stamp, "mgle_nnp_u64_hex": u64_hex, "decoded_switches": MgleNnp64Codec.unpack(u64), "verified_tools": callable_tools[:20], "all_inspected_tools_count": len(c_tools), "untrusted_third_party_text": True, "inspected_at_utc": now_iso}
-    return {"agent_id": aid, "name": name, "description": clean_desc[:400], "endpoint": ep, "geo_zone": zone, "merit_grade": merit_g, "guarantee_grade": guar_g, "latency_grade": lat_g, "mgle_nnp_stamp": stamp, "mgle_nnp_64bit": u64, "mgle_nnp_u64_hex": u64_hex, "domain_mask": c_mask, "avg_latency_ms": eff, "synaptic_weight": n_wt, "wired_tool_count": len(callable_tools), "tool_schema_hash_16": h16, "auth_mode": auth_m, "payment_required": is_paid, "untrusted_third_party_text": True, "poison_scan_clean": p_ok, "encounter_count": enc, "room_completions": wins, "room_failures": fails, "dossier_json": dos, "audit_status": st, "last_audited_at": now_iso}
+    return {"agent_id": aid, "name": name, "description": clean_desc[:400], "endpoint": ep, "geo_zone": zone, "merit_grade": merit_g, "guarantee_grade": guar_g, "latency_grade": lat_g, "mgle_nnp_stamp": stamp, "mgle_nnp_64bit": u64, "mgle_nnp_u64_hex": u64_hex, "domain_mask": c_mask, "avg_latency_ms": eff, "synaptic_weight": n_wt, "wired_tool_count": len(callable_tools), "tool_schema_hash_16": h16, "auth_mode": auth_m, "auth_hint": auth_hint, "payment_required": is_paid, "untrusted_third_party_text": True, "poison_scan_clean": p_ok, "encounter_count": enc, "room_completions": wins, "room_failures": fails, "dossier_json": dos, "audit_status": st, "last_audited_at": now_iso}
 
 def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 3.5) -> Dict[str, Any]:
     aid, nm, ds, ep = str(row.get("agent_id") or row.get("id") or ""), str(row.get("name") or ""), str(row.get("description") or "").split(" /*RADIAL_TOOLS:")[0].strip(), str(row.get("endpoint") or "").strip()
@@ -831,6 +888,25 @@ def interrogate_live_endpoint(row: Dict[str, Any], timeout_sec: float = 3.5) -> 
             else: auth_m = f"tools_list_http_{e2.code}"
         except Exception:
             auth_m = "tools_list_unreachable"
+        if auth_m == "none" and tools:
+            try:
+                cb = json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "__radial_auth_probe__", "arguments": {}}}).encode()
+                with urllib.request.urlopen(urllib.request.Request(ep, data=cb, headers=wh, method="POST"), timeout=min(2.2, timeout_sec), context=ctx) as r3:
+                    cs = r3.read(65536).decode("utf-8", errors="replace").strip()
+                    if not cs.startswith("{"):
+                        for ln in cs.splitlines():
+                            if ln.strip().startswith("data:") and "{" in ln: cs = ln.split("data:", 1)[1].strip(); break
+                    cp = json.loads(cs) if cs.startswith("{") else {}
+                    err_blob = json.dumps(cp.get("error") or cp.get("result") or "").lower()
+                    if any(w in err_blob for w in ("unauthorized", "unauthenticated", "invalid token", "missing token", "api key", "oauth", "login required", "bearer")):
+                        auth_m = "tools_call_auth_gated"
+                    elif any(w in err_blob for w in ("payment required", "insufficient credit", "insufficient balance", "x402", "usdc", "buy_credits")):
+                        auth_m, x402_ok = "x402_or_credit_gated", True
+            except urllib.error.HTTPError as e3:
+                if e3.code in (401, 403): auth_m = "tools_call_auth_gated"
+                elif e3.code == 402: auth_m, x402_ok = "x402_micropayment", True
+            except Exception:
+                pass
     zone = infer_endpoint_geo_zone(ep, resp_h, warm if warm is not None else cold)
     return build_agent_record_and_dossier(aid, nm or aid, ds, ep, alive, cold, warm, tools, auth_m, None, x402_ok, row, zone)
 
@@ -1111,12 +1187,12 @@ class StandaloneSwitchboardRuntime:
                         entry = classify_tool_entry(str(ht.get("tool") or ""), str(ht.get("summary") or ""), NormIn, list(ht.get("required") or []))
                         if "callable_now" in ht: entry["callable_now"] = bool(ht["callable_now"]) and entry["callable_now"]
                         if ht.get("effect_class") in ("read_only", "side_effecting"): entry["effect_class"] = ht["effect_class"]
-                        if entry["callable_now"]:
+                        if entry["callable_now"] and entry["tool"] != "verified_schema":
                             hyd_tools.append(entry)
                     stub_dropped = max(0, len(raw_hyd_tools) - len(hyd_tools))
                     adj_wired = max(0, hyd_wired - stub_dropped)
-                    pay_blob = f"{nm_s} {clean_desc} " + " ".join(f"{t.get('tool','')} {t.get('summary','')}" for t in raw_hyd_tools if isinstance(t, dict))
-                    is_paid = bool(X402_PAID_PAT.search(pay_blob)) or (len(code) >= 4 and code[3:4] == "B")
+                    det_auth, is_paid, auth_hint = detect_auth_and_payment_hints(nm_s, clean_desc, raw_hyd_tools, "none", (len(code) >= 4 and code[3:4] == "B"))
+                    has_oauth_gate = (det_auth not in ("none", "x402_or_credit_gated"))
                     fp16 = str(row.get("fingerprint_hex") or "0000000000000000").replace("0x", "")[-16:].rjust(16, "0")
                     has_real_schema = (fp16 != "0000000000000000") and (len(hyd_tools) > 0 or len(raw_hyd_tools) == 0)
                     if ((raw_u64 >> 60) & 0x3) == SCHEMA_NIBBLE and raw_u64 > 0:
@@ -1134,7 +1210,11 @@ class StandaloneSwitchboardRuntime:
                             c_mask = CAPABILITY_BITS["general"]
                         eff_zone = NIBBLE_TO_NEIGHBOR.get(((raw_u64 >> 32) >> 4) & 0xF, zone)
                         merit_c, lat_c = (code[0:1] or "C"), (code[2:3] or "B")
-                        if guar_c in ("A", "B") and has_real_schema and not is_paid:
+                        if guar_c in ("A", "B") and has_oauth_gate:
+                            eff_guar, eff_auth, eff_tools, eff_st = "C", det_auth, len(hyd_tools), "LIVE_AUTH_GATED_GRADE_C"
+                            r_clean = (raw_u64 & 0xFF000000) & (~READINESS_BITS["zero_auth_instant"])
+                            eff_code, eff_u64, _ = MgleNnp64Codec.pack("C", "C", lat_c, "A", "Z", eff_zone, "S" if lat_c in ("A", "B") else "D", r_clean, c_mask)
+                        elif guar_c in ("A", "B") and has_real_schema and not is_paid:
                             eff_guar, eff_auth, eff_tools, eff_st = "A", "none", max(1, adj_wired, len(hyd_tools)), "VERIFIED_LIVE_GRADE_A"
                             r_flags = (raw_u64 & 0xFF000000) | READINESS_BITS["zero_auth_instant"] | READINESS_BITS["poison_scan_clean"]
                             eff_code, eff_u64, _ = MgleNnp64Codec.pack(merit_c, "A", lat_c, "A", "Z", eff_zone, "S" if lat_c in ("A", "B") else "D", r_flags, c_mask)
@@ -1158,7 +1238,7 @@ class StandaloneSwitchboardRuntime:
                             "synaptic_weight": min(0.78, float(row.get("synaptic_weight") or 0.75)) if eff_guar == "C" else float(row.get("synaptic_weight") or 0.80),
                             "wired_tool_count": eff_tools,
                             "tool_schema_hash_16": fp16,
-                            "auth_mode": eff_auth, "payment_required": is_paid, "untrusted_third_party_text": True,
+                            "auth_mode": eff_auth, "auth_hint": auth_hint if eff_auth == "none" else eff_auth, "payment_required": is_paid, "untrusted_third_party_text": True,
                             "poison_scan_clean": guar_c != "F",
                             "encounter_count": max(1, int(row.get("handshakes_completed") or 0)),
                             "room_completions": int(row.get("handshakes_completed") or 0),
@@ -1170,7 +1250,7 @@ class StandaloneSwitchboardRuntime:
                         self.pool_by_id[aid] = rec
                     else:
                         prev_shim = {"synaptic_weight": row.get("synaptic_weight") or 0.80, "guarantee_grade": guar_c, "room_completions": row.get("handshakes_completed") or 0, "room_failures": row.get("handshakes_failed") or 0}
-                        rec = build_agent_record_and_dossier(aid, nm_s, clean_desc, ep, guar_c in ("A", "B"), lat_val, lat_val, [{"name": "verified_schema", "description": clean_desc, "inputSchema": {"type": "object"}}] if has_real_schema else [], prev_record=prev_shim, geo_zone=zone)
+                        rec = build_agent_record_and_dossier(aid, nm_s, clean_desc, ep, guar_c in ("A", "B"), lat_val, lat_val, [], prev_record=prev_shim, geo_zone=zone)
                         if guar_c == "F":
                             rec["guarantee_grade"], rec["audit_status"] = "F", "SLASHED_POISON_GRADE_F"
                         self.pool_by_id[aid] = rec
@@ -1279,7 +1359,7 @@ class StandaloneSwitchboardRuntime:
         out = flash_unsorted_pool(list(self.pool_by_id.values()), caps, zero_auth=zero_auth, max_lat=max_lat, top_k=top_k, mode=mode, caller_region=caller_region, intent_text=intent_text)
         if not self.hydrate_external:
             return out
-        missing = [self.pool_by_id[f["agent_id"]] for f in (out.get("finalists") or []) if not f.get("tools_preview") and f.get("agent_id") in self.pool_by_id]
+        missing = [self.pool_by_id[f["agent_id"]] for f in (out.get("finalists") or []) if (not f.get("tools_preview") or all(t.get("tool") == "verified_schema" for t in (f.get("tools_preview") or []))) and f.get("agent_id") in self.pool_by_id]
         if missing:
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(10, len(missing))) as ex:
                 refreshed = list(ex.map(lambda r: interrogate_live_endpoint(r, timeout_sec=3.0), missing))
@@ -1496,7 +1576,7 @@ MCP_SERVER_TOOLS = [
             "properties": {
                 "include_recent_activity": {
                     "type": "boolean",
-                    "description": "When false, omits the 25-item recent_activity caller array for a compact payload (default true)."
+                    "description": "Public privacy protection strips raw caller User-Agent/IP entries by default (default false); only recent_activity_count is returned publicly."
                 }
             }
         },
@@ -1877,7 +1957,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             sb_u, sb_k = runtime._sb_creds()
             runtime._recompute()
             return {
-                "status": "ok", "service": f"MglennP Radial Switchboard (Spec Rev {SPEC_VERSION})", "spec_version": SPEC_VERSION,
+                "status": "ok", "service": f"MglennP Radial Switchboard (Spec Rev {SPEC_VERSION})", "spec_version": SPEC_VERSION, "rating_disclaimer": RATING_DISCLAIMER_TEXT, "legal_url": "https://radialswitchboard.com/legal",
                 "contact_email": CONTACT_EMAIL, "github_repository": PUBLIC_GITHUB_REPO, "synthetic_seed_rows": 0,
                 "hmac_secret_mode": HMAC_SECRET_MODE, "supabase_connected": bool(sb_u and sb_k),
                 "mcp_endpoint": "https://radialswitchboard.com/mcp", "a2a_agent_card": "https://radialswitchboard.com/.well-known/agent-card.json",
@@ -1999,7 +2079,54 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             elif p == "/v1/health":
                 self._json(200, self._health())
             elif p == "/v1/changelog":
-                self._json(200, {"spec_version": SPEC_VERSION, "releases": [{"version": "3.5.7", "date": "2026-11-17", "highlights": ["Per-tool callable_now stub filter and effect_class (read_only vs side_effecting) tags", "x402 pay-per-call separation (payment_required=true, Grade B) from zero-auth Grade A", "Two-stage 64-bit bitwise + BM25 lexical reranker with match_confidence, eligible_pool, post_filter_candidates, and matched_capabilities", "Strict Crew Role 3 verifier capability enforcement", "protocol_version in MCP content[0].text, nested telemetry.total_external_uses parity, and untrusted_third_party_text markers"]}, {"version": "3.5.6", "date": "2026-11-16", "highlights": ["Non-empty tools_preview hydration, 512KB tools/list cap, true /.well-known/mcp.json card, and paginated /v1/directory/live"]}]})
+                self._json(200, {
+                    "spec_version": SPEC_VERSION,
+                    "legal_url": "https://radialswitchboard.com/legal",
+                    "releases": [
+                        {
+                            "version": "3.5.8",
+                            "date": "2026-11-17",
+                            "highlights": [
+                                "Added live no-op tools/call auth & credit probe (__radial_auth_probe__) plus OAuth/API-key/USDC-credit detectors and auth_hint field",
+                                "Parameterized Crew Role 3 verifier gate (requires >=1 input parameter on read_only cross-check tool; removed legacy zero-arg verified_schema shim)",
+                                "Pre-cached per-agent lexical token sets (_lex_cache) cutting single_pass_flash_ms under 25 ms across 43k+ pool",
+                                "Multi-concept capability overlap weighting ('verification'/'validation' stems) + broad catch-all gateway sprawl penalty",
+                                "Shortened execution_ticket TTL from 86,400s (24h) to 900s (15m), added tools_preview_truncated + fallback tool summaries, and published /legal + /v1/legal AS-IS proprietary heuristic notices"
+                            ],
+                            "changed_or_removed": [
+                                "Removed zero-argument 'verified_schema' fallback shim from _hydrate and finalist previews",
+                                "Changed EXECUTION_TICKET_TTL_SECONDS: 86400 -> 900",
+                                "Changed paid/credit auth_mode label: 'x402_paid_per_call' -> 'x402_or_credit_gated'",
+                                "Changed get_switchboard_telemetry include_recent_activity schema description to default false (privacy parity with GET /v1/health)"
+                            ]
+                        },
+                        {
+                            "version": "3.5.7",
+                            "date": "2026-11-17",
+                            "highlights": [
+                                "Per-tool callable_now stub filter and effect_class (read_only vs side_effecting) tags",
+                                "x402 pay-per-call separation (payment_required=true, Grade B) from zero-auth Grade A",
+                                "Two-stage 64-bit bitwise + BM25 lexical reranker with match_confidence, eligible_pool, post_filter_candidates, and matched_capabilities",
+                                "protocol_version in MCP content[0].text, nested telemetry.total_external_uses parity, and recent_activity privacy strip on /v1/health"
+                            ]
+                        },
+                        {
+                            "version": "3.5.6",
+                            "date": "2026-11-16",
+                            "highlights": [
+                                "On-demand finalist tools_preview hydration via /*RADIAL_TOOLS:*/ persistence and concurrent live interrogation",
+                                "Raised tools/list read buffer to 512KB, served true /.well-known/mcp.json server card, and added paginated /v1/directory/live"
+                            ]
+                        },
+                        {
+                            "version": "3.5.5",
+                            "date": "2026-11-15",
+                            "highlights": [
+                                "64-bit MGLE-NNP bitwise matchmaker, 3-agent vendor-independent crew triad, Ed25519 apprentice credentials, and Base USDC x402 / Canary Scout gate"
+                            ]
+                        }
+                    ]
+                })
             elif p == "/v1/benchmark":
                 recs = list(runtime.pool_by_id.values())
                 s = sorted(float(flash_unsorted_pool(recs, ["sql", "database"], max_lat="E")["single_pass_flash_ms"]) for _ in range(10))
@@ -2014,7 +2141,14 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 elif grd_d in ("A", "B", "C", "D", "E", "F"): all_r = [r for r in all_r if r.get("guarantee_grade") == grd_d]
                 recs = sorted(all_r, key=lambda x: (0 if x.get("guarantee_grade") == "A" else 1, -len(((x.get("dossier_json") or {}).get("verified_tools")) or []), float(x.get("avg_latency_ms") or 99999.0)))
                 page_r = recs[off_d:off_d + lim_d]
-                slim_r = page_r if inc_dos else [{**{k: v for k, v in r.items() if k != "dossier_json"}, "tools_preview": ((r.get("dossier_json") or {}).get("verified_tools") or [])[:4]} for r in page_r]
+                slim_r = []
+                for r in page_r:
+                    tp_raw = ((r.get("dossier_json") or {}).get("verified_tools") or [])[:4]
+                    tp_clean = [{**t, "summary": str(t.get("summary") or f"{str(t.get('tool') or '').replace('_', ' ')}").strip()[:120]} for t in tp_raw if isinstance(t, dict)]
+                    base_d = {k: v for k, v in r.items() if k not in (("_lex_cache",) if inc_dos else ("dossier_json", "_lex_cache"))}
+                    base_d["tools_preview"] = tp_clean
+                    base_d["tools_preview_truncated"] = int(r.get("wired_tool_count") or 0) > len(tp_clean)
+                    slim_r.append(base_d)
                 self._json(200, {"spec_version": SPEC_VERSION, "contact_email": CONTACT_EMAIL, "synthetic_seed_rows": 0, "total_agents": len(all_r), "limit": lim_d, "offset": off_d, "returned_count": len(slim_r), "next_offset": (off_d + lim_d) if (off_d + lim_d) < len(all_r) else None, "appeals": runtime.appeals_log[:20], "tax_ledger": runtime.gate.tax_revenue_ledger[:20], "agents": slim_r})
             elif p == "/v1/phonebook/export":
                 if not ui: runtime.record_event("ai_beacon_discovery_pulls", route=f"GET {p}", ua=ua, ip=ip)
@@ -2053,7 +2187,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                 self._json(200 if cert else 404, cert if cert else {"error": "Credential not found"})
             elif p.startswith("/v1/dossier/"):
                 rec = runtime.pool_by_id.get(urllib.parse.unquote(p[len("/v1/dossier/"):]))
-                self._json(200 if rec else 404, (rec.get("dossier_json") or rec) if rec else {"error": "Not found"})
+                self._json(200 if rec else 404, (rec.get("dossier_json") or {k: v for k, v in rec.items() if k != "_lex_cache"}) if rec else {"error": "Not found"})
             else:
                 self._json(404, {"error": "Route not found"})
 
@@ -2123,7 +2257,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [get_agent_dossier]", ua=ua, ip=ip)
                         aid_req = str(ag.get("agent_id") or "").strip()
                         rec = runtime.pool_by_id.get(aid_req)
-                        out = {"found": bool(rec), "agent_id": aid_req, "dossier": rec or {"error": "Not found"}}
+                        out = {"found": bool(rec), "agent_id": aid_req, "dossier": ({k: v for k, v in rec.items() if k != "_lex_cache"} if rec else {"error": "Not found"})}
                     elif tn == "get_switchboard_telemetry":
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [get_switchboard_telemetry]", ua=ua, ip=ip)
                         out = self._health()
@@ -2139,7 +2273,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                             runtime.pool_by_id[prb["agent_id"]] = prb; runtime._upsert_sb([prb])
                             ar = {"id": f"APP-{len(runtime.appeals_log)+1}", "slug": prb["agent_id"], "endpoint": prb["endpoint"], "status": prb["audit_status"]}
                             runtime.appeals_log.insert(0, ar)
-                            out = {"registered": True, "appeal_id": ar["id"], "audit_status": prb["audit_status"], "updated_record": prb}
+                            out = {"registered": True, "appeal_id": ar["id"], "audit_status": prb["audit_status"], "updated_record": {k: v for k, v in prb.items() if k != "_lex_cache"}}
                     elif tn == "report_execution_outcome":
                         runtime.record_event("mcp_jsonrpc_calls", ext_call=True, route="POST /mcp [report_execution_outcome]", ua=ua, ip=ip)
                         lv = ag.get("observed_latency_ms")
@@ -2159,7 +2293,7 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
     "remaining_quota_calls": out.get("remaining_quota_calls"),
     "untrusted_third_party_text": True,
     "crew_manifest": out.get("crew_manifest"),
-    "finalists": [{"rank": f.get("rank"), "agent_id": f.get("agent_id"), "name": f.get("name"), "endpoint": f.get("endpoint"), "transport": f.get("transport"), "protocol_version": f.get("protocol_version"), "auth_mode": f.get("auth_mode"), "payment_required": f.get("payment_required"), "wired_tool_count": f.get("wired_tool_count"), "tool_schema_hash_16": f.get("tool_schema_hash_16"), "matched_capabilities": f.get("matched_capabilities"), "relevance_score": f.get("relevance_score"), "tools_preview": f.get("tools_preview"), "crew_role": f.get("crew_role"), "execution_ticket": f.get("execution_ticket"), "ticket_expires_unix": f.get("ticket_expires_unix")} for f in (out.get("finalists") or [])[:10]]
+    "finalists": [{"rank": f.get("rank"), "agent_id": f.get("agent_id"), "name": f.get("name"), "endpoint": f.get("endpoint"), "transport": f.get("transport"), "protocol_version": f.get("protocol_version"), "auth_mode": f.get("auth_mode"), "auth_hint": f.get("auth_hint"), "payment_required": f.get("payment_required"), "wired_tool_count": f.get("wired_tool_count"), "tools_preview_truncated": f.get("tools_preview_truncated"), "tool_schema_hash_16": f.get("tool_schema_hash_16"), "matched_capabilities": f.get("matched_capabilities"), "relevance_score": f.get("relevance_score"), "tools_preview": f.get("tools_preview"), "crew_role": f.get("crew_role"), "execution_ticket": f.get("execution_ticket"), "ticket_expires_unix": f.get("ticket_expires_unix")} for f in (out.get("finalists") or [])[:10]]
 }, separators=(",", ":")) if "finalists" in out else json.dumps(out, separators=(",", ":"))
                     self._bytes(200, "application/json; charset=utf-8", json.dumps({"jsonrpc": "2.0", "id": rid, "result": {"content": [{"type": "text", "text": txt_summary}], "structuredContent": out, "isError": False}}, separators=(",", ":")).encode("utf-8"), ex_h or None)
                 else:
@@ -2283,9 +2417,9 @@ def run_self_test() -> int:
         with urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "matchmake_agent_crew", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5) as r_mcp:
             assert r_mcp.headers.get("X-RateLimit-Remaining") is not None
             mr = json.loads(r_mcp.read().decode())
-        assert len(json.dumps(mr)) < 20000
+        assert len(mr["result"]["content"][0]["text"]) < 12000 and len(json.dumps(mr)) < 26000
         c0_parsed = json.loads(mr["result"]["content"][0]["text"])
-        assert c0_parsed["finalists"][0]["protocol_version"] == "2025-06-18" and "eligible_pool" in c0_parsed
+        assert c0_parsed["finalists"][0]["protocol_version"] == "2025-06-18" and "eligible_pool" in c0_parsed and "auth_hint" in c0_parsed["finalists"][0]
         f0 = mr["result"]["structuredContent"]["finalists"][0]
         for fn_item in mr["result"]["structuredContent"]["finalists"]:
             assert len(fn_item["tools_preview"]) >= 1 and fn_item["wired_tool_count"] >= len(fn_item["tools_preview"])
@@ -2295,13 +2429,16 @@ def run_self_test() -> int:
         stub_rec = build_agent_record_and_dossier("test://stub-only", "Stub Broker", "Broker", "https://stub.broker.example/mcp", True, 50.0, 35.0, [{"name": "call_business", "description": "NOT WIRED on this deployment", "inputSchema": {"type": "object"}}])
         paid_rec = build_agent_record_and_dossier("test://x402-paid", "Verse Paid", "Paid per call over x402", "https://verse.paid.example/mcp", True, 50.0, 35.0, [{"name": "ask_verse", "description": "paid per call over x402", "inputSchema": {"type": "object"}}])
         assert stub_rec["wired_tool_count"] == 0 and stub_rec["guarantee_grade"] == "C"
-        assert paid_rec["payment_required"] is True and paid_rec["guarantee_grade"] == "B" and paid_rec["auth_mode"] == "x402_paid_per_call"
+        assert paid_rec["payment_required"] is True and paid_rec["guarantee_grade"] == "B" and paid_rec["auth_mode"] == "x402_or_credit_gated"
+        oauth_rec = build_agent_record_and_dossier("mcp://test/oauth", "PropFacil CRM", "Manage real estate leads with OAuth", "https://prop.example/mcp", True, 40.0, 30.0, [{"name": "list_leads", "description": "List leads", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}}}}], "none")
+        assert oauth_rec["guarantee_grade"] == "C" and oauth_rec["auth_mode"] == "oauth_or_apikey_required"
+        assert EXECUTION_TICKET_TTL_SECONDS == 900
         lg_html = urllib.request.urlopen(f"{base}/legal", timeout=5).read().decode()
         assert "in-house proprietary" in lg_html.lower() and "as is" in lg_html.lower()
         lg_json = json.loads(urllib.request.urlopen(f"{base}/v1/legal", timeout=5).read().decode())
         assert lg_json["industry_or_legal_certification"] is False
         hl_chk = json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())
-        assert hl_chk["total_external_uses"] == hl_chk["telemetry"]["total_external_uses"] and "recent_activity" not in hl_chk["telemetry"]
+        assert hl_chk["total_external_uses"] == hl_chk["telemetry"]["total_external_uses"] and "recent_activity" not in hl_chk["telemetry"] and "rating_disclaimer" in hl_chk
         tkt, tid = f0["execution_ticket"], f0["agent_id"]
         mr_alias = json.loads(urllib.request.urlopen(urllib.request.Request(f"{base}/mcp", data=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "flash_matchmake_agents", "arguments": {"intent": "postgres sql"}}}).encode(), headers={"Content-Type": "application/json", "X-Radial-Pass": kr["pass_token"]}, method="POST"), timeout=5).read().decode())
         assert mr_alias["result"]["structuredContent"]["finalist_count"] >= 1
