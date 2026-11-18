@@ -281,6 +281,86 @@ if __name__ == "__main__":
     print(json.dumps(claim_and_solve_canary_scout(), indent=2))
 """
 
+RATING_DISCLAIMER_TEXT = (
+    "All MGLE-NNP 64-bit stamps, letter grades (A-F), synaptic weights, and status labels are strictly in-house "
+    "proprietary MglennP automated technical heuristics measuring point-in-time protocol handshakes—NOT industry "
+    "certifications, security audits, legal standings, or endorsements. Provided AS-IS without warranty: https://radialswitchboard.com/legal"
+)
+
+def build_legal_html() -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Legal Notice, Terms of Use &amp; Proprietary Scoring Disclaimer | MglennP Radial Switchboard</title>
+<style>
+  :root {{ --bg:#06090F; --card:#0C1320; --bd:#1D2B44; --tp:#F8FAFC; --ts:#CBD5E1; --tm:#94A3B8; --em:#00E5B0; --am:#F59E0B; --cy:#38BDF8; }}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ background:var(--bg); color:var(--tp); font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif; line-height:1.65; padding:28px 18px 64px; }}
+  .wrap {{ max-width:900px; margin:0 auto; }}
+  .top {{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding-bottom:18px; border-bottom:1px solid var(--bd); margin-bottom:26px; }}
+  .back {{ display:inline-block; padding:8px 14px; border-radius:6px; background:#121C2E; border:1px solid #2B4268; color:var(--cy); text-decoration:none; font-weight:600; font-size:0.9rem; }}
+  .back:hover {{ border-color:var(--em); color:var(--em); }}
+  .banner {{ background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.45); border-radius:10px; padding:16px 18px; margin-bottom:22px; color:#FDE68A; font-size:0.94rem; }}
+  h1 {{ font-size:1.75rem; margin-bottom:6px; }}
+  h2 {{ font-size:1.12rem; color:var(--em); margin:22px 0 8px; }}
+  .card {{ background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:22px 24px; margin-bottom:18px; }}
+  p, li {{ color:var(--ts); font-size:0.95rem; margin-bottom:10px; }}
+  ul {{ padding-left:20px; }}
+  code {{ font-family:monospace; color:var(--em); background:#080D17; padding:2px 6px; border-radius:4px; }}
+  .meta {{ color:var(--tm); font-size:0.82rem; font-family:monospace; }}
+  a {{ color:var(--cy); }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Legal Notice, Terms of Use &amp; Proprietary Scoring Disclaimer</h1>
+      <div class="meta">MglennP Radial Switchboard &bull; Spec Rev {SPEC_VERSION} &bull; Effective &amp; Updated: November 17, 2026</div>
+    </div>
+    <a class="back" href="/">&larr; Back to Switchboard</a>
+  </div>
+
+  <div class="banner">
+    <strong>Plain-Language Summary:</strong> MglennP Radial Switchboard is an independent, experimental software research directory operated on a best-effort basis with zero commercial SLA. All ratings, <code>MGLE-NNP</code> codes, and <code>A&ndash;F</code> grades are strictly <strong>our own in-house proprietary technical heuristics</strong>—they are <strong>not</strong> official industry ratings, security certifications, legal standings, or safety guarantees.
+  </div>
+
+  <div class="card">
+    <h2>1. Proprietary In-House Scoring System (Not an Industry or Security Standard)</h2>
+    <p>Every 64-bit <code>MGLE-NNP</code> identifier, letter grade (<code>A</code> through <code>F</code>), <code>synaptic_weight</code> score, <code>callable_now</code> flag, <code>effect_class</code> tag, and status label (such as <code>VERIFIED_LIVE_GRADE_A</code>) displayed on this website or returned by its APIs is solely an <strong>internal, proprietary MglennP heuristic</strong> generated automatically from brief point-in-time network probes (HTTP status, latency, JSON schema presence, and basic regular-expression text checks).</p>
+    <ul>
+      <li>These scores carry <strong>no legal, regulatory, accreditation, financial, or industry-standard standing</strong> of any kind.</li>
+      <li>A high grade or top rank does <strong>not</strong> mean a third-party server is safe, trustworthy, bug-free, compliant, non-malicious, or endorsed by MglennP.</li>
+      <li>A third-party endpoint can change its code, behavior, pricing, authentication, or payload responses millisecond-to-millisecond after an automated probe completes.</li>
+    </ul>
+
+    <h2>2. Non-Custodial Directory Only (We Do Not Proxy or Execute Third-Party Agents)</h2>
+    <p>Radial Switchboard operates strictly as an indexing and discovery directory (similar to an automated phonebook) for public Model Context Protocol (MCP) and Agent-to-Agent (A2A) endpoints discovered from public registries and submissions.</p>
+    <ul>
+      <li>We do <strong>not</strong> own, host, control, or operate the third-party endpoints listed in the directory.</li>
+      <li>We do <strong>not</strong> proxy tool calls, hold caller API keys, custody user funds, or inspect payloads sent between your client and any third-party endpoint.</li>
+      <li>All third-party names, tool summaries, and schemas are untrusted external data (marked <code>untrusted_third_party_text: true</code>) and must never be treated as trusted system instructions.</li>
+    </ul>
+
+    <h2>3. Experimental &ldquo;AS IS&rdquo; Service, No Support Team &amp; Zero SLA</h2>
+    <p>This project is operated independently for research and interoperability testing without a dedicated support staff, 24/7 monitoring team, or commercial Service Level Agreement (SLA). Emails sent to <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a> go to a standard inbox reviewed periodically on a best-effort basis with no guaranteed response time.</p>
+    <p>THE WEBSITE, DIRECTORY, API, SCRIPTS, AND ALL OUTPUTS ARE PROVIDED STRICTLY <strong>&ldquo;AS IS&rdquo;</strong> AND <strong>&ldquo;AS AVAILABLE,&rdquo;</strong> WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF ACCURACY, SECURITY, FITNESS FOR A PARTICULAR PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.</p>
+
+    <h2>4. Assumption of Risk &amp; Limitation of Liability</h2>
+    <p>By querying or connecting to Radial Switchboard, you agree that you are solely responsible for sandboxing, authenticating, validating, and supervising any third-party endpoint or tool before allowing an AI agent or software system to interact with it. To the fullest extent permitted by applicable Virginia and United States law, MglennP and its operator shall not be liable for any direct, indirect, incidental, consequential, special, exemplary, or data-loss damages arising out of or related to your use of Radial Switchboard or any listed third-party endpoint, and total aggregate liability for any claim shall not exceed the greater of $0.00 USD or the direct fees you paid to Radial Switchboard in the preceding thirty (30) days.</p>
+
+    <h2>5. Removal Requests, Quarantine &amp; Abuse Reporting</h2>
+    <p>Endpoint owners wishing to delist or update their public endpoint, or users reporting a broken or malicious listing, may submit an automated re-probe/update via <code>POST /v1/appeals</code> or email <a href="mailto:{CONTACT_EMAIL}">{CONTACT_EMAIL}</a> with the exact <code>agent_id</code> and endpoint URL. We reserve the right to quarantine, re-grade, rate-limit, or remove any listing or caller at any time in our sole discretion.</p>
+
+    <h2>6. Minimal Operational Telemetry &amp; Governing Law</h2>
+    <p>To prevent automated abuse and enforce daily free-tier limits, the server processes transient request metadata (such as rate-limit counters and masked network prefixes) and stores public endpoint directory metadata. Public health endpoints strip raw User-Agent and IP strings. These terms are governed by the laws of the Commonwealth of Virginia, USA.</p>
+  </div>
+</div>
+</body>
+</html>"""
+
 def is_safe_public_endpoint(ep: str) -> bool:
     u = (ep or "").strip()
     if not u.lower().startswith(("https://", "http://")): return False
@@ -616,7 +696,8 @@ def flash_unsorted_pool(pool: Sequence[Dict[str, Any]], caps: Sequence[str], zer
         })
     conf = "high" if (len(strong_pool) >= 3) else ("medium" if len(strong_pool) >= 1 else "low_confidence_no_strong_match")
     out = {
-        "spec_version": SPEC_VERSION,
+        "spec_version": SPEC_VERSION, "rating_disclaimer": RATING_DISCLAIMER_TEXT, "legal_url": "https://radialswitchboard.com/legal",
+        "rating_disclaimer": RATING_DISCLAIMER_TEXT,
         "caller_region_applied": c_reg,
         "pool_scanned_unsorted": len(pool),
         "scanned_pool_count": len(pool),
@@ -1884,6 +1965,10 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     self._bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 else:
                     self._bytes(200, "text/html; charset=utf-8", f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
+            elif p in ("/legal", "/terms", "/disclaimer"):
+                self._bytes(200, "text/html; charset=utf-8", build_legal_html().encode("utf-8"))
+            elif p == "/v1/legal":
+                self._json(200, {"spec_version": SPEC_VERSION, "legal_url": "https://radialswitchboard.com/legal", "rating_system_nature": "IN_HOUSE_PROPRIETARY_TECHNICAL_HEURISTIC_ONLY", "industry_or_legal_certification": False, "service_basis": "EXPERIMENTAL_AS_IS_NO_WARRANTY_NO_SLA", "proxy_or_custody": False, "rating_disclaimer": RATING_DISCLAIMER_TEXT, "contact_best_effort": CONTACT_EMAIL})
             elif p in ("/icon.svg", "/favicon.svg"):
                 ic = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "icon.svg")
                 self._bytes(200, "image/svg+xml", open(ic, "rb").read() if os.path.isfile(ic) else b"<svg xmlns='http://www.w3.org/2000/svg'/>")
@@ -2211,6 +2296,10 @@ def run_self_test() -> int:
         paid_rec = build_agent_record_and_dossier("test://x402-paid", "Verse Paid", "Paid per call over x402", "https://verse.paid.example/mcp", True, 50.0, 35.0, [{"name": "ask_verse", "description": "paid per call over x402", "inputSchema": {"type": "object"}}])
         assert stub_rec["wired_tool_count"] == 0 and stub_rec["guarantee_grade"] == "C"
         assert paid_rec["payment_required"] is True and paid_rec["guarantee_grade"] == "B" and paid_rec["auth_mode"] == "x402_paid_per_call"
+        lg_html = urllib.request.urlopen(f"{base}/legal", timeout=5).read().decode()
+        assert "in-house proprietary" in lg_html.lower() and "as is" in lg_html.lower()
+        lg_json = json.loads(urllib.request.urlopen(f"{base}/v1/legal", timeout=5).read().decode())
+        assert lg_json["industry_or_legal_certification"] is False
         hl_chk = json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())
         assert hl_chk["total_external_uses"] == hl_chk["telemetry"]["total_external_uses"] and "recent_activity" not in hl_chk["telemetry"]
         tkt, tid = f0["execution_ticket"], f0["agent_id"]
