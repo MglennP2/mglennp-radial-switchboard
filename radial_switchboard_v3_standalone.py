@@ -240,23 +240,40 @@ def did_key_to_pubkey(did: str) -> bytes:
     return raw[2:]
 
 MCP_STDIO_BRIDGE_SOURCE = f"""#!/usr/bin/env python3
-\\"\\"\\"MglennP Radial Switchboard -- MCP Stdio Bridge (Spec Rev {SPEC_VERSION}) | {CONTACT_EMAIL}\\"\\"\\"
-import json, os, sys, urllib.request
+# MglennP Radial Switchboard -- MCP Stdio Bridge (Spec Rev {SPEC_VERSION}) | {CONTACT_EMAIL}
+import json, os, sys, urllib.error, urllib.request
 MCP_URL = os.environ.get("RADIAL_MCP_URL", "https://radialswitchboard.com/mcp")
 PASS_TOKEN = os.environ.get("RADIAL_PASS_TOKEN", "").strip()
+TIMEOUT_S = int(os.environ.get("RADIAL_TIMEOUT_S", "25"))
 for line in sys.stdin:
     raw = line.strip()
     if not raw: continue
+    req_id = None
+    is_notif = False
     try:
-        h = {{"Content-Type": "application/json", "Accept": "application/json", "mcp-protocol-version": "2026-07-28"}}
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            req_id = parsed.get("id")
+            is_notif = "id" not in parsed
+        h = {{"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "RadialSwitchboard-StdioBridge/{SPEC_VERSION}", "mcp-protocol-version": "2026-07-28"}}
         if PASS_TOKEN: h["X-Radial-Pass"] = PASS_TOKEN
-        with urllib.request.urlopen(urllib.request.Request(MCP_URL, data=raw.encode(), headers=h, method="POST"), timeout=15) as r:
-            b = r.read().decode("utf-8", errors="replace").strip()
-            if b: sys.stdout.write(b + "\\\\n"); sys.stdout.flush()
+        req = urllib.request.Request(MCP_URL, data=raw.encode("utf-8"), headers=h, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+                b = r.read().decode("utf-8", errors="replace").strip()
+        except urllib.error.HTTPError as he:
+            eb = he.read().decode("utf-8", errors="replace").strip()
+            if not eb: raise
+            b = eb
+        if b and not is_notif:
+            try: b = json.dumps(json.loads(b), separators=(",", ":"))
+            except Exception: b = b.replace("\\r", " ").replace("\\n", " ")
+            sys.stdout.write(b + "\\n"); sys.stdout.flush()
     except Exception as exc:
-        sys.stdout.write(json.dumps({{"jsonrpc": "2.0", "id": None, "error": {{"code": -32000, "message": str(exc)}}}}) + "\\\\n"); sys.stdout.flush()
+        if not is_notif:
+            err = {{"jsonrpc": "2.0", "id": req_id, "error": {{"code": -32000, "message": str(exc)}}}}
+            sys.stdout.write(json.dumps(err, separators=(",", ":")) + "\\n"); sys.stdout.flush()
 """
-
 APPRENTICE_STARTER_SOURCE = f"""#!/usr/bin/env python3
 \\"\\"\\"MglennP Radial Switchboard -- Blank-Canvas Apprentice Genesis Hook Starter (MIT, Spec {SPEC_VERSION})
 Enrolls an autonomous agent via self-certifying did:key (Economy=A, Bit 25 seasoned_tenure=0) and earns
