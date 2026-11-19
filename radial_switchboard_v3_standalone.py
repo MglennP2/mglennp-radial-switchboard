@@ -1006,6 +1006,167 @@ class DualLaneGateAndTaxLedger:
         self.pass_remaining_credits[nc] = WORK_PASS_CREDITS
         return {"status": "VERIFIED_WORK_PASS_ISSUED", "pass_token": self._sign("work", nc, WORK_PASS_CREDITS, exp), "handshakes_granted": WORK_PASS_CREDITS, "expires_unix": exp, "monetary_value_usd": 0.0}
 
+def build_pulse_html(data: Dict[str, Any]) -> str:
+    _esc = __import__("html").escape
+    init_json = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b1120">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>Radial Switchboard — Live Pulse</title>
+<style>
+  :root {{ --bg:#0b1120; --card:#111827; --bdr:#1e293b; --txt:#f8fafc; --mut:#94a3b8; --em:#10b981; --sky:#38bdf8; --amb:#fbbf24; --pur:#c084fc; }}
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--txt); padding:16px; max-width:980px; margin:0 auto; line-height:1.45; }}
+  .hdr {{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--bdr); }}
+  .title {{ font-size:1.25rem; font-weight:700; display:flex; align-items:center; gap:8px; }}
+  .dot {{ width:10px; height:10px; border-radius:50%; background:var(--em); box-shadow:0 0 10px var(--em); display:inline-block; }}
+  .sub {{ font-size:0.8rem; color:var(--mut); }}
+  .btn {{ background:#1e293b; color:var(--txt); border:1px solid #334155; border-radius:8px; padding:7px 12px; font-size:0.8rem; font-weight:600; cursor:pointer; }}
+  .btn:active {{ transform:scale(0.98); }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(205px,1fr)); gap:12px; margin-bottom:16px; }}
+  .card {{ background:var(--card); border:1px solid var(--bdr); border-radius:12px; padding:14px; }}
+  .lbl {{ font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--mut); }}
+  .val {{ font-size:1.85rem; font-weight:800; margin:4px 0; font-variant-numeric:tabular-nums; }}
+  .pill {{ display:inline-block; font-size:0.74rem; padding:2px 8px; border-radius:999px; background:#0f172a; border:1px solid var(--bdr); color:var(--mut); }}
+  .sysbar {{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }}
+  .sec {{ background:var(--card); border:1px solid var(--bdr); border-radius:12px; padding:14px; margin-bottom:16px; overflow-x:auto; }}
+  .sec h2 {{ font-size:0.92rem; margin-bottom:10px; color:#e2e8f0; }}
+  table {{ width:100%; border-collapse:collapse; font-size:0.82rem; font-variant-numeric:tabular-nums; }}
+  th,td {{ text-align:left; padding:7px 8px; border-bottom:1px solid #1e293b; white-space:nowrap; }}
+  th {{ color:var(--mut); font-weight:600; font-size:0.74rem; text-transform:uppercase; }}
+  .r {{ text-align:right; }}
+  .mono {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:0.77rem; }}
+  .foot {{ font-size:0.75rem; color:var(--mut); text-align:center; padding:8px 0 20px; }}
+  a {{ color:var(--sky); text-decoration:none; }}
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div>
+      <div class="title"><span class="dot"></span> Radial Switchboard Pulse</div>
+      <div class="sub" id="hdrSub">Observer Mode (Viewing never inflates counters) &bull; Spec {_esc(str(data.get("spec_version") or ""))}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="pill" id="updBadge">Live</span>
+      <button class="btn" onclick="refreshPulse()">Refresh</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="lbl">Agent Task Calls (MCP + REST)</div>
+      <div class="val" style="color:var(--em)" id="vTasks">0</div>
+      <span class="pill" id="pTasksToday">Today: 0</span>
+    </div>
+    <div class="card">
+      <div class="lbl">Human Browser Visits</div>
+      <div class="val" style="color:var(--sky)" id="vHumans">0</div>
+      <span class="pill" id="pHumansToday">Today: 0</span>
+    </div>
+    <div class="card">
+      <div class="lbl">MCP Handshakes &amp; Probes</div>
+      <div class="val" style="color:var(--amb)" id="vProbes">0</div>
+      <span class="pill" id="pProbesToday">Today: 0</span>
+    </div>
+    <div class="card">
+      <div class="lbl">AI Discovery Beacons</div>
+      <div class="val" style="color:var(--pur)" id="vBeacons">0</div>
+      <span class="pill" id="pBeaconsToday">Today: 0</span>
+    </div>
+  </div>
+
+  <div class="sysbar" id="sysBar"></div>
+
+  <div class="sec">
+    <h2>14-Day UTC Traffic History</h2>
+    <table>
+      <thead><tr><th>UTC Date</th><th class="r">Task Calls</th><th class="r">Human Visits</th><th class="r">MCP Probes</th><th class="r">Beacons</th><th class="r">Bot Crawls</th></tr></thead>
+      <tbody id="dailyBody"></tbody>
+    </table>
+  </div>
+
+  <div class="sec">
+    <h2>Caller Ecosystem Breakdown (All Recorded Hits)</h2>
+    <table>
+      <thead><tr><th>Client / Agent Family</th><th class="r">Events</th></tr></thead>
+      <tbody id="famBody"></tbody>
+    </table>
+  </div>
+
+  <div class="sec">
+    <h2>Latest External Events (Privacy-Safe, Zero IPs)</h2>
+    <table>
+      <thead><tr><th>UTC Time</th><th>Client Family</th><th>Event</th><th>Route</th></tr></thead>
+      <tbody id="actBody"></tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <a href="/?ui_observer=true">Open Directory (Observer Mode)</a> &bull; <a href="/v1/pulse">Raw /v1/pulse JSON</a> &bull; <a href="/legal">Legal</a>
+  </div>
+
+<script>
+let DATA = {init_json};
+const fmt = n => Number(n || 0).toLocaleString();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}})[c]);
+
+function render(d) {{
+  const t = d.totals || {{}};
+  const td = d.today_utc || {{}};
+  document.getElementById("vTasks").textContent = fmt(t.task_calls);
+  document.getElementById("pTasksToday").textContent = `Today: ${{fmt(td.tasks)}} (${{fmt(t.mcp_jsonrpc_calls)}} MCP / ${{fmt(t.rest_matchmake_calls)}} REST)`;
+  document.getElementById("vHumans").textContent = fmt(t.human_page_views);
+  document.getElementById("pHumansToday").textContent = `Today: ${{fmt(td.humans)}} &bull; Bot crawls: ${{fmt(t.bot_page_crawls)}}`;
+  document.getElementById("vProbes").textContent = fmt(t.mcp_total_probes);
+  document.getElementById("pProbesToday").textContent = `Today: ${{fmt(td.probes)}} (${{fmt(t.mcp_initialize_handshakes)}} init / ${{fmt(t.mcp_tools_list_probes)}} list)`;
+  document.getElementById("vBeacons").textContent = fmt(t.discovery_pulls);
+  document.getElementById("pBeaconsToday").textContent = `Today: ${{fmt(td.beacons)}} &bull; Bridge DL: ${{fmt(t.bridge_script_downloads)}}`;
+
+  const p = d.pool || {{}};
+  document.getElementById("sysBar").innerHTML = [
+    `Pool: <b>${{fmt(p.live_callable_ab)}}</b> Grade A/B of <b>${{fmt(p.total_indexed)}}</b>`,
+    `Scout Sweeps: <b>${{fmt(t.scout_sweeps_completed)}}</b>`,
+    `Supabase: <b>${{d.supabase_connected ? "ONLINE" : "LOCAL"}}</b>`,
+    `Scale Guard: <b>min=0 / max=1</b>`,
+    `USDC Settled: <b>$${{Number(d.usdc_settled_usd || 0).toFixed(2)}}</b>`
+  ].map(x => `<span class="pill">${{x}}</span>`).join("");
+
+  const rows = d.daily_history || [];
+  document.getElementById("dailyBody").innerHTML = rows.length ? rows.map(r =>
+    `<tr><td class="mono">${{esc(r.date)}}</td><td class="r" style="color:#10b981;font-weight:700">${{fmt(r.tasks)}}</td><td class="r">${{fmt(r.humans)}}</td><td class="r">${{fmt(r.probes)}}</td><td class="r">${{fmt(r.beacons)}}</td><td class="r">${{fmt(r.bots)}}</td></tr>`
+  ).join("") : `<tr><td colspan="6" style="color:#94a3b8">New daily buckets start accumulating immediately on incoming hits.</td></tr>`;
+
+  const fams = d.client_families || [];
+  document.getElementById("famBody").innerHTML = fams.length ? fams.map(f =>
+    `<tr><td>${{esc(f.family)}}</td><td class="r mono">${{fmt(f.count)}}</td></tr>`
+  ).join("") : `<tr><td colspan="2" style="color:#94a3b8">Awaiting next external caller classification.</td></tr>`;
+
+  const acts = d.recent_events || [];
+  document.getElementById("actBody").innerHTML = acts.length ? acts.map(a =>
+    `<tr><td class="mono">${{esc(a.utc)}}</td><td>${{esc(a.client_family)}}</td><td class="mono">${{esc(a.event)}}</td><td class="mono">${{esc(a.route)}}</td></tr>`
+  ).join("") : `<tr><td colspan="4" style="color:#94a3b8">No recent external events recorded yet.</td></tr>`;
+
+  document.getElementById("updBadge").textContent = "Updated " + new Date().toLocaleTimeString();
+}}
+
+async function refreshPulse() {{
+  try {{
+    const r = await fetch("/v1/pulse", {{cache: "no-store"}});
+    if (r.ok) {{ DATA = await r.json(); render(DATA); }}
+  }} catch (e) {{}}
+}}
+render(DATA);
+setInterval(refreshPulse, 30000);
+</script>
+</body>
+</html>"""
+
 class StandaloneSwitchboardRuntime:
     def __init__(self, hydrate_external: bool = True, start_background_scouts: bool = True) -> None:
         self.hydrate_external = hydrate_external
@@ -1016,11 +1177,14 @@ class StandaloneSwitchboardRuntime:
         self.redeemed_tickets: set[str] = set()
         self._lock = threading.Lock()
         self.crawl_cursor: Dict[str, Any] = {"registry_cursor": "", "pages_completed": 0, "full_cycles": 0}
+        self._save_lock = threading.Lock()
         self.telemetry: Dict[str, Any] = {
             "total_external_uses": 0, "external_agent_calls": 0, "mcp_jsonrpc_calls": 0, "rest_matchmake_calls": 0,
             "ai_beacon_discovery_pulls": 0, "room_handshakes_completed": 0, "starter_keys_minted": 0,
             "outcome_reports_verified": 0, "scout_sweeps_completed": 0, "apprentices_enrolled": 0,
             "mcp_initialize_handshakes": 0, "mcp_tools_list_probes": 0, "bridge_script_downloads": 0,
+            "human_page_views": 0, "bot_page_crawls": 0,
+            "daily_rollup": {}, "client_families": {},
             "recent_activity": [],
             "last_scout_sweep_utc": None, "scout_currently_running": False,
         }
@@ -1054,23 +1218,61 @@ class StandaloneSwitchboardRuntime:
             return ":".join(pts[:2]) + "::x"
         return s[:12]
 
+    @staticmethod
+    def _classify_caller(ua: str) -> str:
+        u = (ua or "").lower()
+        if not u or u == "unknown": return "Unknown / Direct HTTP"
+        if "claude" in u or "anthropic" in u: return "Claude / Anthropic"
+        if "grok" in u or "xai" in u: return "Grok / xAI"
+        if "chatgpt" in u or "openai" in u or "oai-searchbot" in u: return "OpenAI / ChatGPT"
+        if "gemini" in u or "google-extended" in u or "googleother" in u: return "Google / Gemini"
+        if any(b in u for b in ("glama", "smithery", "lowdown", "mcp", "modelcontextprotocol")): return "MCP Client / Directory"
+        if any(b in u for b in ("googlebot", "bingbot", "duckduckbot", "applebot", "yandex", "baiduspider", "petalbot", "ahrefs", "semrush")): return "Search / SEO Crawler"
+        if "mozilla/" in u and any(b in u for b in ("chrome/", "safari/", "firefox/", "edg/")) and "headless" not in u: return "Human Web Browser"
+        if any(b in u for b in ("python", "httpx", "aiohttp", "requests", "urllib", "curl/", "go-http", "node", "undici", "axios", "okhttp")): return "Agent SDK / Script / CLI"
+        return "Other External Client"
+
     def record_event(self, field: str, ext_call: bool = False, route: str = "", ua: str = "", ip: str = "", status: int = 200) -> None:
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        day_k = now_dt.strftime("%Y-%m-%d")
+        fam = self._classify_caller(ua)
         with self._lock:
             self.telemetry[field] = int(self.telemetry.get(field) or 0) + 1
             if ext_call: self.telemetry["external_agent_calls"] = int(self.telemetry.get("external_agent_calls") or 0) + 1
+            if field != "scout_sweeps_completed":
+                dr = dict(self.telemetry.get("daily_rollup") or {})
+                bkt = dict(dr.get(day_k) or {"tasks": 0, "humans": 0, "probes": 0, "beacons": 0, "bots": 0})
+                if field in ("mcp_jsonrpc_calls", "rest_matchmake_calls", "room_handshakes_completed"): bkt["tasks"] = int(bkt.get("tasks") or 0) + 1
+                elif field == "human_page_views": bkt["humans"] = int(bkt.get("humans") or 0) + 1
+                elif field in ("mcp_initialize_handshakes", "mcp_tools_list_probes"): bkt["probes"] = int(bkt.get("probes") or 0) + 1
+                elif field in ("ai_beacon_discovery_pulls", "bridge_script_downloads"): bkt["beacons"] = int(bkt.get("beacons") or 0) + 1
+                elif field == "bot_page_crawls": bkt["bots"] = int(bkt.get("bots") or 0) + 1
+                dr[day_k] = bkt
+                for old_k in sorted(dr.keys())[:-14]:
+                    dr.pop(old_k, None)
+                self.telemetry["daily_rollup"] = dr
+                if ua and "RadialScout" not in ua and "GoogleHC" not in ua:
+                    cf = dict(self.telemetry.get("client_families") or {})
+                    cf[fam] = int(cf.get(fam) or 0) + 1
+                    self.telemetry["client_families"] = cf
             if route:
                 act = list(self.telemetry.get("recent_activity") or [])
                 act.insert(0, {
-                    "utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
+                    "utc": now_dt.strftime("%Y-%m-%d %H:%M:%SZ"),
                     "event": field,
                     "route": route[:64],
                     "status": int(status),
+                    "client_family": fam,
                     "ua": (ua or "unknown").strip()[:96],
                     "ip_masked": self._mask_ip(ip),
                 })
-                self.telemetry["recent_activity"] = act[:25]
+                self.telemetry["recent_activity"] = act[:20]
             self._recompute()
-        if self.hydrate_external: threading.Thread(target=self._save_telemetry, daemon=True).start()
+        if self.hydrate_external:
+            if ext_call or field in ("human_page_views", "starter_keys_minted", "apprentices_enrolled"):
+                self._save_telemetry()
+            else:
+                threading.Thread(target=self._save_telemetry, daemon=True).start()
 
     def _put_sys_state(self, state_id: str, obj: Dict[str, Any], count_val: int = 0) -> None:
         u, k = self._sb_creds()
@@ -1099,31 +1301,65 @@ class StandaloneSwitchboardRuntime:
         except Exception: pass
         return None
 
+    def _merge_telemetry_dict(self, src_d: Dict[str, Any], ks: Tuple[str, ...]) -> None:
+        for kx in ks:
+            if isinstance(src_d.get(kx), int) and src_d[kx] > self.telemetry.get(kx, 0):
+                self.telemetry[kx] = src_d[kx]
+        if isinstance(src_d.get("daily_rollup"), dict):
+            dr = dict(self.telemetry.get("daily_rollup") or {})
+            for dk, dv in src_d["daily_rollup"].items():
+                if isinstance(dv, dict):
+                    cur = dict(dr.get(dk) or {})
+                    for bk in ("tasks", "humans", "probes", "beacons", "bots"):
+                        cur[bk] = max(int(cur.get(bk) or 0), int(dv.get(bk) or 0))
+                    dr[str(dk)[:10]] = cur
+            for old_k in sorted(dr.keys())[:-14]:
+                dr.pop(old_k, None)
+            self.telemetry["daily_rollup"] = dr
+        if isinstance(src_d.get("client_families"), dict):
+            cf = dict(self.telemetry.get("client_families") or {})
+            for fk, fv in src_d["client_families"].items():
+                if isinstance(fv, int):
+                    cf[str(fk)[:40]] = max(int(cf.get(fk) or 0), fv)
+            self.telemetry["client_families"] = cf
+        if isinstance(src_d.get("recent_activity"), list) and src_d["recent_activity"]:
+            seeded = []
+            for item in src_d["recent_activity"][:20]:
+                if isinstance(item, dict):
+                    if not item.get("client_family"):
+                        item = {**item, "client_family": self._classify_caller(str(item.get("ua") or ""))}
+                    seeded.append(item)
+            self.telemetry["recent_activity"] = seeded
+            if not self.telemetry.get("client_families"):
+                cf_seed: Dict[str, int] = {}
+                for item in seeded:
+                    fm = str(item.get("client_family") or "Other External Client")
+                    cf_seed[fm] = cf_seed.get(fm, 0) + 1
+                self.telemetry["client_families"] = cf_seed
+
     def _load_telemetry(self) -> None:
-        ks = ("external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled", "mcp_initialize_handshakes", "mcp_tools_list_probes", "bridge_script_downloads")
+        ks = ("external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled", "mcp_initialize_handshakes", "mcp_tools_list_probes", "bridge_script_downloads", "human_page_views", "bot_page_crawls")
         if os.path.isfile(TELEMETRY_LOCAL_PATH):
             try:
-                loc = json.loads(open(TELEMETRY_LOCAL_PATH).read())
-                for kx in ks:
-                    if isinstance(loc.get(kx), int) and loc[kx] > self.telemetry.get(kx, 0): self.telemetry[kx] = loc[kx]
-                if isinstance(loc.get("recent_activity"), list) and loc["recent_activity"]:
-                    self.telemetry["recent_activity"] = loc["recent_activity"][:25]
+                self._merge_telemetry_dict(json.loads(open(TELEMETRY_LOCAL_PATH).read()), ks)
             except Exception: pass
         rem = self._get_sys_state("sys://telemetry_v3")
         if isinstance(rem, dict):
-            for kx in ks:
-                if isinstance(rem.get(kx), int) and rem[kx] > self.telemetry.get(kx, 0): self.telemetry[kx] = rem[kx]
-            if isinstance(rem.get("recent_activity"), list) and rem["recent_activity"]:
-                self.telemetry["recent_activity"] = rem["recent_activity"][:25]
+            self._merge_telemetry_dict(rem, ks)
         self._recompute()
 
     def _save_telemetry(self) -> None:
-        ks = ("total_external_uses", "external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled", "mcp_initialize_handshakes", "mcp_tools_list_probes", "bridge_script_downloads")
-        snap: Dict[str, Any] = {kx: self.telemetry.get(kx, 0) for kx in ks}
-        snap["recent_activity"] = list(self.telemetry.get("recent_activity") or [])[:25]
-        try: open(TELEMETRY_LOCAL_PATH, "w").write(json.dumps(snap))
-        except Exception: pass
-        self._put_sys_state("sys://telemetry_v3", snap, int(snap.get("total_external_uses") or 0))
+        with self._save_lock:
+            ks = ("total_external_uses", "external_agent_calls", "mcp_jsonrpc_calls", "rest_matchmake_calls", "ai_beacon_discovery_pulls", "room_handshakes_completed", "starter_keys_minted", "outcome_reports_verified", "scout_sweeps_completed", "apprentices_enrolled", "mcp_initialize_handshakes", "mcp_tools_list_probes", "bridge_script_downloads", "human_page_views", "bot_page_crawls")
+            with self._lock:
+                snap: Dict[str, Any] = {kx: int(self.telemetry.get(kx) or 0) for kx in ks}
+                dr = dict(self.telemetry.get("daily_rollup") or {})
+                snap["daily_rollup"] = {k: dr[k] for k in sorted(dr.keys())[-14:]}
+                snap["client_families"] = dict(sorted((self.telemetry.get("client_families") or {}).items(), key=lambda x: x[1], reverse=True)[:15])
+                snap["recent_activity"] = list(self.telemetry.get("recent_activity") or [])[:20]
+            try: open(TELEMETRY_LOCAL_PATH, "w").write(json.dumps(snap, separators=(",", ":")))
+            except Exception: pass
+            self._put_sys_state("sys://telemetry_v3", snap, int(snap.get("total_external_uses") or 0))
 
     def _load_crawl_cursor(self) -> None:
         obj = self._get_sys_state("sys://crawl_cursor_v3")
@@ -2005,12 +2241,70 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             extra["X-RateLimit-Reset"] = rst_u
             return True, gi, extra
 
+        def _build_pulse_data(self) -> Dict[str, Any]:
+            hl = self._health()
+            tel = runtime.telemetry
+            day_now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+            dr = dict(tel.get("daily_rollup") or {})
+            td = dict(dr.get(day_now) or {"tasks": 0, "humans": 0, "probes": 0, "beacons": 0, "bots": 0})
+            hist = [{"date": dk, **dr[dk]} for dk in sorted(dr.keys(), reverse=True)[:14] if isinstance(dr.get(dk), dict)]
+            fams = [{"family": fk, "count": int(fv)} for fk, fv in sorted((tel.get("client_families") or {}).items(), key=lambda x: x[1], reverse=True)]
+            sanitized_ev = [
+                {
+                    "utc": str(ev.get("utc") or ""),
+                    "client_family": str(ev.get("client_family") or runtime._classify_caller(str(ev.get("ua") or ""))),
+                    "event": str(ev.get("event") or ""),
+                    "route": str(ev.get("route") or ""),
+                    "status": int(ev.get("status") or 200),
+                }
+                for ev in (tel.get("recent_activity") or [])[:15] if isinstance(ev, dict)
+            ]
+            init_n = int(tel.get("mcp_initialize_handshakes") or 0)
+            tlist_n = int(tel.get("mcp_tools_list_probes") or 0)
+            return {
+                "status": "ok",
+                "observer_safe": True,
+                "spec_version": SPEC_VERSION,
+                "generated_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
+                "supabase_connected": bool(hl.get("supabase_connected")),
+                "usdc_settled_usd": hl.get("usdc_settled_usd", 0.0),
+                "pool": {
+                    "total_indexed": int(hl.get("total_unsorted_pool") or 0),
+                    "live_callable_ab": int(hl.get("live_callable_ab") or 0),
+                    "offline_code_d": int(hl.get("offline_code_d") or 0),
+                    "quarantined_e": int(hl.get("quarantined_e") or 0),
+                    "slashed_poison_f": int(hl.get("slashed_poison_f") or 0),
+                },
+                "totals": {
+                    "task_calls": int(hl.get("total_external_uses") or 0),
+                    "mcp_jsonrpc_calls": int(tel.get("mcp_jsonrpc_calls") or 0),
+                    "rest_matchmake_calls": int(tel.get("rest_matchmake_calls") or 0),
+                    "human_page_views": int(tel.get("human_page_views") or 0),
+                    "bot_page_crawls": int(tel.get("bot_page_crawls") or 0),
+                    "mcp_total_probes": init_n + tlist_n,
+                    "mcp_initialize_handshakes": init_n,
+                    "mcp_tools_list_probes": tlist_n,
+                    "discovery_pulls": int(hl.get("discovery_pulls") or 0),
+                    "bridge_script_downloads": int(tel.get("bridge_script_downloads") or 0),
+                    "starter_keys_minted": int(tel.get("starter_keys_minted") or 0),
+                    "scout_sweeps_completed": int(tel.get("scout_sweeps_completed") or 0),
+                    "last_scout_sweep_utc": tel.get("last_scout_sweep_utc"),
+                },
+                "today_utc": td,
+                "daily_history": hist,
+                "client_families": fams,
+                "recent_events": sanitized_ev,
+            }
+
         def do_GET(self) -> None:
             pr = urllib.parse.urlparse(self.path); p = pr.path.rstrip("/") or "/"; qs = urllib.parse.parse_qs(pr.query)
             ui = (qs.get("ui_observer") or [""])[0].lower() in ("1", "true")
             ip = (self.headers.get("X-Forwarded-For") or "").split(",")[0].strip() or (self.client_address[0] if self.client_address else "anon")
             ua = str(self.headers.get("User-Agent") or "unknown")
             if p in ("/", "/directory"):
+                if not ui and "RadialScout" not in ua and "GoogleHC" not in ua:
+                    v_field = "human_page_views" if runtime._classify_caller(ua) == "Human Web Browser" else "bot_page_crawls"
+                    runtime.record_event(v_field, route=f"GET {p}", ua=ua, ip=ip)
                 f = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "radial_agent_directory_explorer.html")
                 if os.path.isfile(f):
                     html = open(f, "r", encoding="utf-8").read()
@@ -2045,6 +2339,10 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
                     self._bytes(200, "text/html; charset=utf-8", html.encode("utf-8"))
                 else:
                     self._bytes(200, "text/html; charset=utf-8", f"<h1>Radial Switchboard {SPEC_VERSION}</h1>".encode())
+            elif p == "/pulse":
+                self._bytes(200, "text/html; charset=utf-8", build_pulse_html(self._build_pulse_data()).encode("utf-8"))
+            elif p == "/v1/pulse":
+                self._json(200, self._build_pulse_data())
             elif p in ("/legal", "/terms", "/disclaimer"):
                 self._bytes(200, "text/html; charset=utf-8", build_legal_html().encode("utf-8"))
             elif p == "/v1/legal":
@@ -2437,6 +2735,12 @@ def run_self_test() -> int:
         assert "in-house proprietary" in lg_html.lower() and "as is" in lg_html.lower()
         lg_json = json.loads(urllib.request.urlopen(f"{base}/v1/legal", timeout=5).read().decode())
         assert lg_json["industry_or_legal_certification"] is False
+        urllib.request.urlopen(urllib.request.Request(f"{base}/", headers={"User-Agent": "Mozilla/5.0 (Linux; Android 16; Pixel 11 Pro XL) AppleWebKit/537.36 Chrome/142.0 Safari/537.36"}), timeout=5).read()
+        p_before = json.loads(urllib.request.urlopen(f"{base}/v1/pulse", timeout=5).read().decode())
+        p_html = urllib.request.urlopen(f"{base}/pulse", timeout=5).read().decode()
+        p_after = json.loads(urllib.request.urlopen(f"{base}/v1/pulse", timeout=5).read().decode())
+        assert p_before["totals"]["human_page_views"] >= 1 and p_after["totals"]["human_page_views"] == p_before["totals"]["human_page_views"]
+        assert "Radial Switchboard Pulse" in p_html and "ip_masked" not in json.dumps(p_after)
         hl_chk = json.loads(urllib.request.urlopen(f"{base}/v1/health", timeout=5).read().decode())
         assert hl_chk["total_external_uses"] == hl_chk["telemetry"]["total_external_uses"] and "recent_activity" not in hl_chk["telemetry"] and "rating_disclaimer" in hl_chk
         tkt, tid = f0["execution_ticket"], f0["agent_id"]
