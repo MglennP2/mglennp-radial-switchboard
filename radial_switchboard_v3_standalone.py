@@ -571,14 +571,21 @@ def _get_or_build_lex_cache(rec: Dict[str, Any]) -> Tuple[str, set[str], str, se
     t_names_str = " ".join(str(t.get("tool") or "") for t in v_tools).lower()
     t_sums_str = " ".join(str(t.get("summary") or "") for t in v_tools).lower()
     meta_str = f"{rec.get('agent_id','')} {rec.get('name','')} {rec.get('description','')}".lower()
-    tn_words = set(_tokenize_words(t_names_str))
-    for w in list(tn_words):
+    from sys import intern as _intern
+    tn_raw = set(_tokenize_words(t_names_str))
+    for w in list(tn_raw):
         for p in w.split("_"):
-            if len(p) >= 2: tn_words.add(p)
-    ts_words = set(_tokenize_words(t_sums_str))
-    md_words = set(_tokenize_words(meta_str))
+            if len(p) >= 2: tn_raw.add(p)
+    tn_words = frozenset(_intern(w) for w in tn_raw)
+    ts_words = frozenset(
+        _intern(w) for w in _tokenize_words(t_sums_str)
+    )
+    md_words = frozenset(
+        _intern(w) for w in _tokenize_words(meta_str)
+    )
     built = (t_names_str, tn_words, t_sums_str, ts_words, meta_str, md_words, wtc)
-    rec["_lex_cache"] = built
+    if rec.get("guarantee_grade") in ("A", "B"):
+        rec["_lex_cache"] = built
     return built[:6]
 
 def _compute_stage2_lexical_score(rec: Dict[str, Any], query_terms: List[str], req_c24: int, ag_c24: int) -> float:
@@ -1496,7 +1503,7 @@ class StandaloneSwitchboardRuntime:
                             "encounter_count": max(1, int(row.get("handshakes_completed") or 0)),
                             "room_completions": int(row.get("handshakes_completed") or 0),
                             "room_failures": int(row.get("handshakes_failed") or 0),
-                            "dossier_json": {"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "geo_zone": eff_zone, "mgle_nnp_code": eff_code, "mgle_nnp_u64_hex": f"0x{eff_u64:016X}", "verified_tools": hyd_tools, "untrusted_third_party_text": True},
+                            "dossier_json": ({"agent_id": aid, "vendor_domain": extract_vendor_domain(ep), "geo_zone": eff_zone, "mgle_nnp_code": eff_code, "mgle_nnp_u64_hex": f"0x{eff_u64:016X}", "verified_tools": hyd_tools, "untrusted_third_party_text": True} if hyd_tools else None),
                             "audit_status": eff_st,
                             "last_audited_at": str(row.get("updated_at") or ""),
                         }
@@ -1506,11 +1513,14 @@ class StandaloneSwitchboardRuntime:
                         rec = build_agent_record_and_dossier(aid, nm_s, clean_desc, ep, guar_c in ("A", "B"), lat_val, lat_val, [], prev_record=prev_shim, geo_zone=zone)
                         if guar_c == "F":
                             rec["guarantee_grade"], rec["audit_status"] = "F", "SLASHED_POISON_GRADE_F"
+                        if not rec.get("wired_tool_count"):
+                            rec["dossier_json"] = None
                         self.pool_by_id[aid] = rec
                 if len(batch) < batch_sz: break
                 offset += batch_sz
             except Exception:
                 break
+        import gc; gc.collect()
 
     def _upsert_sb(self, rows: List[Dict[str, Any]]) -> None:
         u, k = self._sb_creds()
@@ -1660,12 +1670,15 @@ class StandaloneSwitchboardRuntime:
             except Exception:
                 pass
             cands = list(cands_by_id.values())
-            with concurrent.futures.ThreadPoolExecutor(max_workers=32) as ex:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=12) as ex:
                 audited = list(ex.map(interrogate_live_endpoint, cands)) if cands else []
-            for rec in audited:
-                self.pool_by_id[rec["agent_id"]] = rec
             if audited:
                 self._upsert_sb(audited)
+            for rec in audited:
+                if not rec.get("wired_tool_count"):
+                    rec["dossier_json"] = None
+                self.pool_by_id[rec["agent_id"]] = rec
+            import gc; gc.collect()
             if self.hydrate_external:
                 self._save_crawl_cursor()
             with self._lock:
