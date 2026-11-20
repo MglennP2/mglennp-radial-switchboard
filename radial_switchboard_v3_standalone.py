@@ -2193,6 +2193,11 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
 
+        def do_DELETE(self) -> None:
+            p = urllib.parse.urlparse(self.path).path.rstrip("/") or "/"
+            allow = "POST, OPTIONS" if p == "/mcp" else "GET, POST, OPTIONS"
+            self._json(405, {"error": "Method not allowed", "allowed_methods": allow.split(", ")}, {"Allow": allow})
+
         def _caller_region(self, qs: Optional[Dict[str, List[str]]] = None, body: Optional[Dict[str, Any]] = None) -> str:
             explicit = ""
             if isinstance(body, dict) and body.get("caller_region"): explicit = str(body["caller_region"])
@@ -2503,6 +2508,15 @@ def create_http_handler(runtime: StandaloneSwitchboardRuntime):
             elif p.startswith("/v1/dossier/"):
                 rec = runtime.pool_by_id.get(urllib.parse.unquote(p[len("/v1/dossier/"):]))
                 self._json(200 if rec else 404, (rec.get("dossier_json") or {k: v for k, v in rec.items() if k != "_lex_cache"}) if rec else {"error": "Not found"})
+            elif p == "/mcp":
+                self._json(405, {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32600, "message": "Streamable HTTP MCP endpoint requires HTTP POST (stateless JSON-RPC 2.0; SSE GET stream disabled)."},
+                    "mcp_endpoint": "https://radialswitchboard.com/mcp",
+                    "transport": "streamable-http",
+                    "allowed_methods": ["POST", "OPTIONS"],
+                }, {"Allow": "POST, OPTIONS"})
             else:
                 self._json(404, {"error": "Route not found"})
 
